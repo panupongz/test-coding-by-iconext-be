@@ -1,0 +1,60 @@
+name: test-coding-by-iconext-be
+
+services:
+  backend:
+    build:
+      context: .
+      target: development
+    command: npm run start:container
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3000
+      TZ: UTC
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_CONNECT_MAX_ATTEMPTS: ${DB_CONNECT_MAX_ATTEMPTS:-30}
+      DB_CONNECT_RETRY_MS: ${DB_CONNECT_RETRY_MS:-1000}
+    depends_on:
+      mysql:
+        condition: service_healthy
+        restart: true
+    ports:
+      - "${PORT:-3000}:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "const socket=require('node:net').connect(3000,'127.0.0.1');socket.on('connect',()=>{socket.end();process.exit(0)});socket.on('error',()=>process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      TZ: UTC
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "mysqladmin ping --host=127.0.0.1 --user=root --password=$${MYSQL_ROOT_PASSWORD} --silent"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+
+volumes:
+  mysql_data:

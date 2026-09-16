@@ -1,6 +1,6 @@
 # Backend implementation checklist
 
-สถานะเอกสาร: **FINAL PRE-IMPLEMENTATION GATE ผ่าน และพร้อมรับคำสั่งเริ่ม T-001 — ยังไม่ implement application code หรือรัน application tests**
+สถานะเอกสาร: **T-001 DONE — project/runtime foundation ผ่าน implementation, tests, Docker verification และ Senior Review; Task ถัดไปคือ T-002 และยังไม่ได้เริ่ม**
 
 ## Source of Truth และวิธีอ่าน
 
@@ -261,7 +261,7 @@ T-004–T-006 ห้ามเริ่มก่อน validation/error และ
 
 ## T-001 Backend TypeScript + Express
 
-**Current Status:** TODO
+**Current Status:** DONE
 
 **Objective:** สร้าง runtime/application foundation ที่รันใน Docker Compose, ใช้ strict TypeScript + Express และแยก HTTP/application/data responsibilities ชัดเจน
 
@@ -269,40 +269,40 @@ T-004–T-006 ห้ามเริ่มก่อน validation/error และ
 
 **Sub-tasks:**
 
-- [ ] ตั้งโครง TypeScript + Express และ route prefix `/api/v1` สำหรับสาม API เท่านั้น: `POST /sales`, `POST /sales/{sale_id}/payment`, `POST /sales/{sale_id}/cancel`
-- [ ] เปิด strict TypeScript และ lint; ใช้ explicit types/clear naming; หลีกเลี่ยง undocumented `any`, magic strings/numbers และ unnecessary abstractions
-- [ ] วาง Route → Controller → Service/Use Case → Repository/Data Access → MySQL โดย Controllerมีเฉพาะ HTTP concerns และไม่เพิ่ม login, role, stock, Product CRUD, read API หรือ delete API
-- [ ] วาง configuration สำหรับ MySQL, server time และ UTC โดยไม่เพิ่ม business setting
-- [ ] validate required environment variablesตอน startup และ fail fastด้วย sanitized errorเมื่อ configurationขาด
-- [ ] วาง global fallback, reasonable Express HTTP security baseline และ structured server logging โดยไม่เพิ่ม request/correlation IDหรือ log secrets
-- [ ] เตรียม backend container สำหรับ Node.js + TypeScript + Express และ Docker Compose service ชื่อ `backend`
-- [ ] เตรียม Compose service ชื่อ `mysql` ด้วย MySQL 8.x; Compose มีสอง services ตาม AD01
-- [ ] ให้ services ติดต่อกันผ่าน Compose network และให้ backend ใช้ database host `mysql` ภายใน container
-- [ ] อ่าน database host, port, username, password และ database name จาก environment variables; ห้าม hard-codeค่า connection
-- [ ] ให้ backend startup account for MySQL readiness และไม่ assume ว่า container start เท่ากับ database พร้อมรับ connection
-- [ ] เพิ่ม `.env.example`, `.gitignore` และ `.dockerignore`; exclude `.env`, real secrets, dependencies, build/test artifacts และไฟล์ที่ไม่จำเป็นต่อ image context
-- [ ] ทำให้โปรเจกต์ build และ run ได้ด้วย Docker Compose
+- [x] ตั้งโครง TypeScript + Express และ route prefix `/api/v1` สำหรับสาม API เท่านั้น: `POST /sales`, `POST /sales/{sale_id}/payment`, `POST /sales/{sale_id}/cancel`
+- [x] เปิด strict TypeScript และ lint; ใช้ explicit types/clear naming; หลีกเลี่ยง undocumented `any`, magic strings/numbers และ unnecessary abstractions
+- [x] วาง Route → Controller → Service/Use Case → Repository/Data Access → MySQL โดย Controllerมีเฉพาะ HTTP concerns และไม่เพิ่ม login, role, stock, Product CRUD, read API หรือ delete API
+- [x] วาง configuration สำหรับ MySQL, server time และ UTC โดยไม่เพิ่ม business setting
+- [x] validate required environment variablesตอน startup และ fail fastด้วย sanitized errorเมื่อ configurationขาด
+- [x] วาง global fallback, reasonable Express HTTP security baseline และ structured server logging โดยไม่เพิ่ม request/correlation IDหรือ log secrets
+- [x] เตรียม backend container สำหรับ Node.js + TypeScript + Express และ Docker Compose service ชื่อ `backend`
+- [x] เตรียม Compose service ชื่อ `mysql` ด้วย MySQL 8.x; Compose มีสอง services ตาม AD01
+- [x] ให้ services ติดต่อกันผ่าน Compose network และให้ backend ใช้ database host `mysql` ภายใน container
+- [x] อ่าน database host, port, username, password และ database name จาก environment variables; ห้าม hard-codeค่า connection
+- [x] ให้ backend startup account for MySQL readiness และไม่ assume ว่า container start เท่ากับ database พร้อมรับ connection
+- [x] เพิ่ม `.env.example`, `.gitignore` และ `.dockerignore`; exclude `.env`, real secrets, dependencies, build/test artifacts และไฟล์ที่ไม่จำเป็นต่อ image context
+- [x] ทำให้โปรเจกต์ build และ run ได้ด้วย Docker Compose
 
 **Acceptance Criteria:** TypeScript compile ได้; route ทั้งสามอยู่ใต้ `/api/v1`; ไม่มี API/actor/business flow นอก source; unexpected exception ใช้ error contract กลาง; Compose มี `backend` และ `mysql`; backend run ใน container และ connect MySQL 8.x ผ่าน host `mysql` ด้วย environment variables; startup รองรับ readiness; repository ไม่มี real secrets
 
 **Required Tests:**
 
-- TC-001.1: route table มี action POST สาม route และไม่มี GET/DELETE/Product management route
-- TC-001.2: action APIs ไม่ต้องใช้ authentication/authorization
-- TC-001.3: unhandled exception ตอบ `500` ตาม error contract และไม่มี stack/query/internal detail ใน body
-- TC-001.4: validate Compose config → มี services `backend` และ `mysql`; MySQL image เป็น 8.x
-- TC-001.5: build/start Compose จาก clean environment + `.env.example` values ที่เหมาะกับ test → containers start และ backend ไม่ใช้ `localhost` เป็น DB host
-- TC-001.6: start backend ขณะที่ MySQL ยังไม่ healthy → backend readiness/startup behavior ไม่ทำให้ระบบพร้อมใช้งานก่อน database พร้อม และสามารถเชื่อมต่อเมื่อ MySQL healthy
-- TC-001.7: scan tracked configuration → ไม่มี real secret/`.env`; database connection fieldsมาจาก environment variables
+- [x] TC-001.1: route table มี action POST สาม route และไม่มี GET/DELETE/Product management route
+- [x] TC-001.2: action APIs ไม่ต้องใช้ authentication/authorization
+- [x] TC-001.3: unhandled exception ตอบ `500` ตาม error contract และไม่มี stack/query/internal detail ใน body
+- [x] TC-001.4: validate Compose config → มี services `backend` และ `mysql`; MySQL image เป็น 8.x
+- [x] TC-001.5: build/start Compose จาก clean environment + `.env.example` values ที่เหมาะกับ test → containers start และ backend ไม่ใช้ `localhost` เป็น DB host
+- [x] TC-001.6: start backend ขณะที่ MySQL ยังไม่ healthy → backend readiness/startup behavior ไม่ทำให้ระบบพร้อมใช้งานก่อน database พร้อม และสามารถเชื่อมต่อเมื่อ MySQL healthy
+- [x] TC-001.7: scan tracked configuration → ไม่มี real secret/`.env`; database connection fieldsมาจาก environment variables
 
 **Definition of Done:**
 
-- [ ] Sub-tasksและ Acceptance Criteria ของ T-001 ผ่าน
-- [ ] Strict TypeScript/typecheck และ lint ผ่าน
-- [ ] TC-001.1–TC-001.7 ผ่าน
-- [ ] SRG01 ไม่มี unresolved HIGH/MEDIUM findings
-- [ ] Setup/config documentationและ checklistอัปเดตตาม implementationจริง
-- [ ] Prompt audit trail updated
+- [x] Sub-tasksและ Acceptance Criteria ของ T-001 ผ่าน
+- [x] Strict TypeScript/typecheck และ lint ผ่าน
+- [x] TC-001.1–TC-001.7 ผ่าน
+- [x] SRG01 ไม่มี unresolved HIGH/MEDIUM findings
+- [x] Setup/config documentationและ checklistอัปเดตตาม implementationจริง
+- [x] Prompt audit trail updated
 
 ## T-002 MySQL Schema + Migration
 
@@ -675,4 +675,4 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 - [x] ปิด R01–R04 เป็น TECH01–TECH04 โดยไม่เปลี่ยน business behavior
 - [x] ตรวจ checklist หลัง TECH01–TECH04 และไม่พบ genuine business blocker
 - [x] Final Pre-Implementation Gate ตรวจ requirement completeness, traceability, dependencies, database, Docker, API contracts, idempotency, concurrency, tests, engineering quality และ prompt audit แล้ว: **PASS**
-- [ ] ผู้ใช้ส่งคำสั่งเริ่ม T-001 อย่างชัดเจนก่อนเริ่ม production code
+- [x] ผู้ใช้ส่งคำสั่งเริ่ม T-001 อย่างชัดเจนก่อนเริ่ม production code

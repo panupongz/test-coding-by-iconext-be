@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.npm-cache
+node_modules
+dist
+coverage
+*.log
+.idea
+.vscode
