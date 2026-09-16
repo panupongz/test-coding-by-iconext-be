@@ -1,6 +1,6 @@
 # test-coding-by-iconext-be
 
-Node.js, TypeScript, Express, and MySQL backend foundation for the ICONEXT coding exercise. T-001 intentionally exposes only the three approved action-route placeholders; their business behavior belongs to later tasks.
+Node.js, TypeScript, Express, and MySQL backend for the ICONEXT coding exercise. T-001 exposes only the three approved action-route placeholders, and T-002 provides their database schema; API business behavior belongs to later tasks.
 
 ## Prerequisites
 
@@ -47,12 +47,26 @@ The development command requires the variables shown in `.env.example` and an ac
 
 ## Database commands
 
-No business tables, migrations, or product seed data are part of T-001. The migration and seed runners are ready for later task files and are executable inside the backend container:
+The Knex migration creates `products`, `sales`, `payments`, and `idempotency_keys` with the required primary keys, foreign keys, unique indexes, enums, checks, integer-THB fields, and UTC-oriented timestamps. Run migration and seed commands inside the backend container:
 
 ```sh
 docker compose exec backend npm run db:migrate
 docker compose exec backend npm run db:seed
 ```
+
+T-003 owns the five-product seed. Until T-003 is implemented, the seed command completes successfully as a no-op.
+
+Live database integration tests require both `NODE_ENV=test` and the explicit `DB_TEST_CONTEXT=disposable` safety flag. Database variables alone are not enough, so ordinary development and production databases skip these tests. Each test runs in a transaction that is rolled back and never deletes pre-existing rows by predictable identifiers.
+
+Run the live suite against an isolated, disposable Compose project:
+
+```sh
+docker compose -p t002-test --env-file .env.example up -d mysql
+docker compose -p t002-test --env-file .env.example run --build --rm -e NODE_ENV=test -e DB_TEST_CONTEXT=disposable backend npm test
+docker compose -p t002-test --env-file .env.example down -v
+```
+
+The final command permanently removes only the `t002-test` project containers and temporary database volume.
 
 The production image contains compiled runners:
 
