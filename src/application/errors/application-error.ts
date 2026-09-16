@@ -18,13 +18,34 @@ export const ERROR_CODES = {
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
 
+export const ERROR_MESSAGES = {
+  [ERROR_CODES.validation]: 'ข้อมูลคำขอไม่ถูกต้อง',
+  [ERROR_CODES.malformedJson]: 'รูปแบบ JSON ไม่ถูกต้อง',
+  [ERROR_CODES.invalidProductCode]:
+    'รหัสสินค้าต้องอยู่ในรูปแบบ P ตามด้วยตัวเลข 3 หลัก',
+  [ERROR_CODES.productNotFound]: 'ไม่พบสินค้า',
+  [ERROR_CODES.saleNotFound]: 'ไม่พบรายการขาย',
+  [ERROR_CODES.saleAlreadyPaid]: 'รายการขายนี้ชำระเงินแล้ว',
+  [ERROR_CODES.saleCancelled]: 'รายการขายนี้ถูกยกเลิกแล้ว',
+  [ERROR_CODES.insufficientCashAmount]: 'จำนวนเงินสดไม่เพียงพอ',
+  [ERROR_CODES.qrAmountMismatch]: 'ยอดชำระ QR ต้องเท่ากับยอดรวม',
+  [ERROR_CODES.unsupportedPaymentMethod]: 'ไม่รองรับวิธีชำระเงินนี้',
+  [ERROR_CODES.idempotencyKeyRequired]: 'กรุณาระบุ Idempotency-Key',
+  [ERROR_CODES.idempotencyKeyTooLong]:
+    'Idempotency-Key ต้องยาวไม่เกิน 255 ตัวอักษร',
+  [ERROR_CODES.idempotencyConflict]:
+    'Idempotency-Key นี้ขัดแย้งกับคำขอเดิม',
+  [ERROR_CODES.idempotencyFailed]:
+    'คำขอนี้เคยดำเนินการไม่สำเร็จและไม่สามารถลองซ้ำได้',
+  [ERROR_CODES.internalServerError]: 'เกิดข้อผิดพลาดภายในระบบ',
+} as const satisfies Readonly<Record<ErrorCode, string>>;
+
 export class ApplicationError extends Error {
   public constructor(
     public readonly statusCode: number,
     public readonly code: ErrorCode,
-    message: string,
   ) {
-    super(message);
+    super(ERROR_MESSAGES[code]);
     this.name = 'ApplicationError';
   }
 }

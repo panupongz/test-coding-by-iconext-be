@@ -32,7 +32,6 @@ export const createCancelSaleController = (
         throw new ApplicationError(
           HTTP_NOT_FOUND,
           ERROR_CODES.saleNotFound,
-          'ไม่พบรายการขาย',
         );
       }
 
@@ -44,7 +43,6 @@ export const createCancelSaleController = (
         throw new ApplicationError(
           HTTP_BAD_REQUEST,
           ERROR_CODES.validation,
-          'คำขอยกเลิกต้องไม่มีข้อมูล body',
         );
       }
 

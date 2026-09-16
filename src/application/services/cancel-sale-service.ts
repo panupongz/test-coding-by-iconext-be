@@ -154,7 +154,6 @@ export class CancelSaleService {
           throw new ApplicationError(
             HTTP_NOT_FOUND,
             ERROR_CODES.saleNotFound,
-            'ไม่พบรายการขาย',
           );
         }
         await this.afterSaleLocked();
@@ -163,7 +162,6 @@ export class CancelSaleService {
           throw new ApplicationError(
             HTTP_CONFLICT,
             ERROR_CODES.saleAlreadyPaid,
-            'รายการขายนี้ชำระเงินแล้ว',
           );
         }
 
@@ -223,7 +221,6 @@ export class CancelSaleService {
       throw new ApplicationError(
         HTTP_CONFLICT,
         ERROR_CODES.idempotencyFailed,
-        'คำขอนี้เคยดำเนินการไม่สำเร็จและไม่สามารถลองซ้ำได้',
       );
     }
 
@@ -234,7 +231,6 @@ export class CancelSaleService {
       throw new ApplicationError(
         HTTP_CONFLICT,
         ERROR_CODES.idempotencyConflict,
-        'Idempotency-Key นี้กำลังถูกใช้งาน',
       );
     }
 
@@ -255,7 +251,6 @@ export class CancelSaleService {
       throw new ApplicationError(
         HTTP_CONFLICT,
         ERROR_CODES.idempotencyConflict,
-        'Idempotency-Key นี้ถูกใช้กับคำขออื่นแล้ว',
       );
     }
   }

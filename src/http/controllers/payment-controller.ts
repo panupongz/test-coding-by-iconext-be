@@ -36,7 +36,6 @@ const parsePaymentMethod = (paymentMethod: string): PaymentMethod => {
   throw new ApplicationError(
     HTTP_BAD_REQUEST,
     ERROR_CODES.unsupportedPaymentMethod,
-    'ไม่รองรับวิธีชำระเงินนี้',
   );
 };
 
@@ -55,7 +54,6 @@ export const createPaymentController = (
         throw new ApplicationError(
           HTTP_NOT_FOUND,
           ERROR_CODES.saleNotFound,
-          'ไม่พบรายการขาย',
         );
       }
 
@@ -68,7 +66,6 @@ export const createPaymentController = (
         throw new ApplicationError(
           HTTP_BAD_REQUEST,
           ERROR_CODES.validation,
-          'ข้อมูลคำขอไม่ถูกต้อง',
         );
       }
 

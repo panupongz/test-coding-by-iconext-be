@@ -40,7 +40,6 @@ export const createCreateSaleController = (
         throw new ApplicationError(
           HTTP_BAD_REQUEST,
           ERROR_CODES.validation,
-          'ข้อมูลคำขอไม่ถูกต้อง',
         );
       }
 
@@ -48,7 +47,6 @@ export const createCreateSaleController = (
         throw new ApplicationError(
           HTTP_BAD_REQUEST,
           ERROR_CODES.invalidProductCode,
-          'รหัสสินค้าต้องอยู่ในรูปแบบ P ตามด้วยตัวเลข 3 หลัก',
         );
       }
 

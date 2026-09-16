@@ -1,6 +1,6 @@
 # Backend implementation checklist
 
-สถานะเอกสาร: **T-001 DONE; T-002 DONE; T-003 DONE; T-004 DONE; T-005 DONE; T-006 DONE — Final Gate ผ่านหลัง SRG01 PASS และ audit completion**
+สถานะเอกสาร: **T-001 DONE; T-002 DONE; T-003 DONE; T-004 DONE; T-005 DONE; T-006 DONE; T-007 DONE — Final Gate ผ่านหลัง SRG01 PASS และ audit completion**
 
 ## Source of Truth และวิธีอ่าน
 
@@ -566,7 +566,7 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 ## T-007 Validation + Thai Error Response
 
-**Current Status:** TODO
+**Current Status:** DONE
 
 **Objective:** บังคับ strict validation และ standardized Thai error contract ที่ปลอดภัยและสม่ำเสมอทุก endpoint
 
@@ -574,33 +574,45 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 **Sub-tasks:**
 
-- [ ] strict validation ทุก JSON body: missing/extra/wrong-type และ malformed JSONตอบ `400`
-- [ ] Cancel ห้ามมี body; same key + different request และ failed key retryตอบ `409`
-- [ ] ใช้ status ที่ยืนยันแล้ว รวม Payment initial successและ Cancel invalid/missing Saleตาม TECH02–TECH03
-- [ ] ทุก error ใช้ `{ "error": { "code": ..., "message": ... } }`; code เป็น fixed enum; message ภาษาไทย
-- [ ] `500` ใช้ข้อความกลาง ไม่เผย internal detail; global fallback จัดการ unexpected exception
-- [ ] ไม่เพิ่ม request/correlation ID; ใช้ fixed enumทั้งชุดตาม TECH04
+- [x] strict validation ทุก JSON body: missing/extra/wrong-type และ malformed JSONตอบ `400`
+- [x] Cancel ห้ามมี body; same key + different request และ failed key retryตอบ `409`
+- [x] ใช้ status ที่ยืนยันแล้ว รวม Payment initial successและ Cancel invalid/missing Saleตาม TECH02–TECH03
+- [x] ทุก error ใช้ `{ "error": { "code": ..., "message": ... } }`; code เป็น fixed enum; message ภาษาไทย
+- [x] `500` ใช้ข้อความกลาง ไม่เผย internal detail; global fallback จัดการ unexpected exception
+- [x] ไม่เพิ่ม request/correlation ID; ใช้ fixed enumทั้งชุดตาม TECH04
 
 **Acceptance Criteria:** validation/error contract สม่ำเสมอ; Thai messages; fixed enumตรง TECH04; status ทุก pathตรง Source และ TECH02–TECH03
 
 **Required Tests:**
 
-- TC-007.1: extra/missing/wrong-type/malformed body → `400` + error shape กลาง
-- TC-007.2: invalid Create code → `400`; missing Product → `404`; invalid/missing Payment Sale → `404`
-- TC-007.3: key/state conflicts → `409` + fixed error code
-- TC-007.4: Cancel body → `400`; Cancel invalid/missing Sale → `404` + `SALE_NOT_FOUND`
-- TC-007.5: unexpected exception → `500` + Thai generic message ไม่มี internal details
-- TC-007.6: ทุก error codeอยู่ใน TECH04 fixed enum
-- TC-007.7: ทุก client-visible validation/business/internal error ใช้ message ภาษาไทยที่ไม่ว่าง และไม่เผย English internal/stack/SQL/credential detail
+- [x] TC-007.1: extra/missing/wrong-type/malformed body → `400` + error shape กลาง
+- [x] TC-007.2: invalid Create code → `400`; missing Product → `404`; invalid/missing Payment Sale → `404`
+- [x] TC-007.3: key/state conflicts → `409` + fixed error code
+- [x] TC-007.4: Cancel body → `400`; Cancel invalid/missing Sale → `404` + `SALE_NOT_FOUND`
+- [x] TC-007.5: unexpected exception → `500` + Thai generic message ไม่มี internal details
+- [x] TC-007.6: ทุก error codeอยู่ใน TECH04 fixed enum
+- [x] TC-007.7: ทุก client-visible validation/business/internal error ใช้ message ภาษาไทยที่ไม่ว่าง และไม่เผย English internal/stack/SQL/credential detail
+
+**Implementation evidence (2026-09-17):**
+
+- รวม TECH04 fixed enum และ Thai message ของทุก code ไว้ใน shared typed catalog; `ApplicationError`, malformed JSON, global `500` และ unmatched-route `404` ใช้ contract เดียวกัน
+- Dedicated T-007 integration contract suite 18 tests ครอบคลุม strict body validation, malformed JSON, invalid/missing resources, `409` conflicts, Cancel body, fixed enum, Thai messages, unmatched route และ sanitized unexpected exception
+- Disposable MySQL 8.4 full suite ผ่าน 126/126 tests ใน 13 files; unit suite ผ่าน 46/46; host full regression ผ่าน 75 tests โดย 51 database tests skip ตาม disposable-context guard
+- Typecheck, lint, build และ `git diff --check` ผ่าน; ไม่เพิ่ม dependency, request/correlation ID, schema หรือ T-008+ behavior
+- SRG01 initial review พบ MINOR ว่า unmatched-route message ยังอยู่นอก shared catalog; แก้ให้ใช้ canonical `VALIDATION_ERROR` message และ re-run full host checks ผ่าน
+- Post-fix SRG01 re-review: PASS — unresolved BLOCKER/HIGH/MEDIUM 0 และ MINOR 0; validation/error/security/logging/scope checksผ่าน
+- Prompt implementation ถูกเก็บ verbatim ใน `docs/prompts/T-007-validation-errors.md`; README อัปเดตตาม API/error contract ที่ตรวจแล้ว
+- Independent final gate (Prompt #2, 2026-09-17): PASS — fresh focused HTTP/T-007 suite 65/65, unit 46/46, host regression 75 passed/51 guarded skips, disposable MySQL 8.4 full suite 126/126, typecheck/lint/build/`git diff --check` ผ่าน; findings BLOCKER/HIGH/MEDIUM/MINOR = 0/0/0/0; ไม่ต้องแก้ production code
+- Final Gate: PASS — acceptance criteria และ TC-007.1–TC-007.7 ผ่านครบ; T-007 ปิดเป็น `DONE`
 
 **Definition of Done:**
 
-- [ ] Sub-tasksและ Acceptance Criteria ของ T-007 ผ่าน
-- [ ] Strict schemas/typesและ lintผ่าน; ไม่มี implicit coercionหรือ undocumented `any`
-- [ ] TC-007.1–TC-007.7 และ error integration testsผ่าน
-- [ ] SRG01 ตรวจ validation/error/security/loggingและไม่มี unresolved HIGH/MEDIUM findings
-- [ ] Error-code/API documentationและ checklistอัปเดต
-- [ ] Prompt audit trail updated
+- [x] Sub-tasksและ Acceptance Criteria ของ T-007 ผ่าน
+- [x] Strict schemas/typesและ lintผ่าน; ไม่มี implicit coercionหรือ undocumented `any`
+- [x] TC-007.1–TC-007.7 และ error integration testsผ่าน
+- [x] SRG01 ตรวจ validation/error/security/loggingและไม่มี unresolved HIGH/MEDIUM findings
+- [x] Error-code/API documentationและ checklistอัปเดต
+- [x] Prompt audit trail updated
 
 ## T-008 Transaction + FK + Unique Index
 

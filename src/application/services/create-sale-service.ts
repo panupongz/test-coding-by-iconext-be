@@ -141,7 +141,6 @@ export class CreateSaleService {
           throw new ApplicationError(
             HTTP_NOT_FOUND,
             ERROR_CODES.productNotFound,
-            'ไม่พบสินค้า',
           );
         }
 
@@ -212,7 +211,6 @@ export class CreateSaleService {
       throw new ApplicationError(
         HTTP_CONFLICT,
         ERROR_CODES.idempotencyFailed,
-        'คำขอนี้เคยดำเนินการไม่สำเร็จและไม่สามารถลองซ้ำได้',
       );
     }
 
@@ -220,7 +218,6 @@ export class CreateSaleService {
       throw new ApplicationError(
         HTTP_CONFLICT,
         ERROR_CODES.idempotencyConflict,
-        'Idempotency-Key นี้กำลังถูกใช้งาน',
       );
     }
     const saleId = record.saleId;
@@ -268,7 +265,6 @@ export class CreateSaleService {
       throw new ApplicationError(
         HTTP_CONFLICT,
         ERROR_CODES.idempotencyConflict,
-        'Idempotency-Key นี้ถูกใช้กับคำขออื่นแล้ว',
       );
     }
   }

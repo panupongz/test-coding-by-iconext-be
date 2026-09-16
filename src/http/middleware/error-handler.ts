@@ -4,6 +4,7 @@ import type { Logger } from 'pino';
 import {
   ApplicationError,
   ERROR_CODES,
+  ERROR_MESSAGES,
 } from '../../application/errors/application-error.js';
 
 const HTTP_NOT_FOUND = 404;
@@ -12,13 +13,18 @@ const HTTP_INTERNAL_SERVER_ERROR = 500;
 
 const INTERNAL_SERVER_ERROR_RESPONSE = Object.freeze({
   error: Object.freeze({
-    code: 'INTERNAL_SERVER_ERROR',
-    message: 'เกิดข้อผิดพลาดภายในระบบ',
+    code: ERROR_CODES.internalServerError,
+    message: ERROR_MESSAGES[ERROR_CODES.internalServerError],
   }),
 });
 
 export const notFoundHandler: RequestHandler = (_request, response) => {
-  response.status(HTTP_NOT_FOUND).end();
+  response.status(HTTP_NOT_FOUND).json({
+    error: {
+      code: ERROR_CODES.validation,
+      message: ERROR_MESSAGES[ERROR_CODES.validation],
+    },
+  });
 };
 
 export const createErrorHandler = (logger: Logger): ErrorRequestHandler =>
@@ -46,7 +52,7 @@ export const createErrorHandler = (logger: Logger): ErrorRequestHandler =>
       response.status(HTTP_BAD_REQUEST).json({
         error: {
           code: ERROR_CODES.malformedJson,
-          message: 'รูปแบบ JSON ไม่ถูกต้อง',
+          message: ERROR_MESSAGES[ERROR_CODES.malformedJson],
         },
       });
       return;

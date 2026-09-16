@@ -1,6 +1,6 @@
 # test-coding-by-iconext-be
 
-Node.js, TypeScript, Express, and MySQL backend for the ICONEXT coding exercise. The Create Sale and Payment actions are implemented; Cancel remains a placeholder for its owning task.
+Node.js, TypeScript, Express, and MySQL backend for the ICONEXT coding exercise. The Create Sale, Payment, and Cancel actions are implemented.
 
 ## Prerequisites
 
@@ -103,10 +103,28 @@ Payment accepts only `CASH` and `QR_PAYMENT`. `amount_received` must be a positi
 
 Payment locks the Sale and writes Payment plus `PENDING` to `PAID` atomically. Expired `PENDING` Sales are persisted as `CANCELLED`, do not create a Payment, and return `200` with only `sale_id` and `status`. Concurrent Payments can create at most one Payment row for a Sale; unrelated `PAID` or `CANCELLED` Sales return `409`.
 
-The following registered action still returns `501 Not Implemented` until its owning task adds approved behavior:
+Cancel is available without a request body:
 
-- `POST /api/v1/sales/:sale_id/cancel`
+```http
+POST /api/v1/sales/:sale_id/cancel
+Idempotency-Key: client-generated-cancel-key
+```
+
+Cancel returns `200` with only `sale_id` and `status`. It persists `PENDING` to `CANCELLED` atomically, including expiration detected by the action. A repeated cancellation of an already-cancelled Sale also returns `200`; a paid Sale returns `409`. Any JSON body, including `{}`, is rejected with `400`.
+
+All request bodies use strict validation: missing or unknown fields, wrong types, invalid enum values, and malformed JSON are rejected without implicit coercion. Every `400`, `404`, `409`, and `500` response uses this shape with a non-empty Thai message:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "ข้อมูลคำขอไม่ถูกต้อง"
+  }
+}
+```
+
+Error codes are limited to `VALIDATION_ERROR`, `MALFORMED_JSON`, `INVALID_PRODUCT_CODE`, `PRODUCT_NOT_FOUND`, `SALE_NOT_FOUND`, `SALE_ALREADY_PAID`, `SALE_CANCELLED`, `INSUFFICIENT_CASH_AMOUNT`, `QR_AMOUNT_MISMATCH`, `UNSUPPORTED_PAYMENT_METHOD`, `IDEMPOTENCY_KEY_REQUIRED`, `IDEMPOTENCY_KEY_TOO_LONG`, `IDEMPOTENCY_CONFLICT`, `IDEMPOTENCY_FAILED`, and `INTERNAL_SERVER_ERROR`. Unexpected exceptions return only the generic Thai `INTERNAL_SERVER_ERROR` response; stack traces, SQL, credentials, and internal exception details are never included in the response.
 
 There are no GET, DELETE, Product CRUD, login, role, or stock routes. Container health uses a TCP check rather than adding an unapproved HTTP route.
 
-Create Sale and Payment follow route → controller → service → repository → MySQL. Controllers own strict HTTP validation, while services own idempotency, state, locking, and transaction orchestration. Cancel still uses the T-001 placeholder controller.
+All three actions follow route → controller → service → repository → MySQL. Controllers own strict HTTP validation, while services own idempotency, state, locking, and transaction orchestration. Shared error primitives enforce the fixed code and Thai-message catalog across the HTTP boundary.

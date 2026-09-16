@@ -13,7 +13,6 @@ export const readIdempotencyKey = (
     throw new ApplicationError(
       HTTP_BAD_REQUEST,
       ERROR_CODES.idempotencyKeyRequired,
-      'กรุณาระบุ Idempotency-Key',
     );
   }
 
@@ -21,7 +20,6 @@ export const readIdempotencyKey = (
     throw new ApplicationError(
       HTTP_BAD_REQUEST,
       ERROR_CODES.idempotencyKeyTooLong,
-      'Idempotency-Key ต้องยาวไม่เกิน 255 ตัวอักษร',
     );
   }
 
