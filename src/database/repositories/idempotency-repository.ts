@@ -3,6 +3,7 @@ import type { Knex } from 'knex';
 export const IDEMPOTENCY_OPERATION = {
   createSale: 'CREATE_SALE',
   payment: 'PAYMENT',
+  cancel: 'CANCEL',
 } as const;
 
 export const IDEMPOTENCY_STATUS = {

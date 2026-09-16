@@ -1,6 +1,6 @@
 # Backend implementation checklist
 
-สถานะเอกสาร: **T-001 DONE; T-002 DONE; T-003 DONE; T-004 DONE; T-005 DONE — Final Gate ผ่านหลัง SRG01 PASS และ audit completion**
+สถานะเอกสาร: **T-001 DONE; T-002 DONE; T-003 DONE; T-004 DONE; T-005 DONE; T-006 DONE — Final Gate ผ่านหลัง SRG01 PASS และ audit completion**
 
 ## Source of Truth และวิธีอ่าน
 
@@ -515,7 +515,7 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 ## T-006 Cancel + Expiration
 
-**Current Status:** TODO
+**Current Status:** DONE
 
 **Objective:** Implement Cancel และ persisted expiration transition แบบ atomic พร้อม idempotent retries
 
@@ -523,34 +523,46 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 **Sub-tasks:**
 
-- [ ] Cancel endpoint ใช้ Sale ID จาก path และ client key จาก header; ไม่มี body
-- [ ] JSON body ใด ๆ รวม `{}` ให้ `400`; key validation ใช้กฎเดิม
-- [ ] `PENDING → CANCELLED` transactionally; `PAID`ตอบ `409`; expired `PENDING` persist `CANCELLED` และตอบ `200`
-- [ ] Sale ที่ `CANCELLED` แล้วและใช้ key ใหม่ตอบ `200` ตาม Q116 โดยไม่มี transition ซ้ำ
-- [ ] successful same key/same requestตอบ `200` + existing Cancel result; same key/different Saleตอบ `409`
-- [ ] failed operation rollback, persist `FAILED` แยก, retry keyตอบ `409`
-- [ ] invalid/missing Saleตอบ `404` + `SALE_NOT_FOUND` ตาม TECH03
+- [x] Cancel endpoint ใช้ Sale ID จาก path และ client key จาก header; ไม่มี body
+- [x] JSON body ใด ๆ รวม `{}` ให้ `400`; key validation ใช้กฎเดิม
+- [x] `PENDING → CANCELLED` transactionally; `PAID`ตอบ `409`; expired `PENDING` persist `CANCELLED` และตอบ `200`
+- [x] Sale ที่ `CANCELLED` แล้วและใช้ key ใหม่ตอบ `200` ตาม Q116 โดยไม่มี transition ซ้ำ
+- [x] successful same key/same requestตอบ `200` + existing Cancel result; same key/different Saleตอบ `409`
+- [x] failed operation rollback, persist `FAILED` แยก, retry keyตอบ `409`
+- [x] invalid/missing Saleตอบ `404` + `SALE_NOT_FOUND` ตาม TECH03
 
 **Acceptance Criteria:** Cancel ไม่มี body; transition/expiry persisted; repeated Cancel ไม่เปลี่ยน state ซ้ำ; idempotency ตรง RC03–RC04; invalid/missing Saleตอบ `404` + `SALE_NOT_FOUND` ตาม TECH03
 
 **Required Tests:**
 
-- TC-006.1: cancel `PENDING` → `200`, persisted `CANCELLED`, bodyมี exact field set `sale_id` + `status`
-- TC-006.2: cancel `PAID` → `409`, state ไม่เปลี่ยน
-- TC-006.3: expired `PENDING` → `200`, persisted `CANCELLED`
-- TC-006.4: successful retryและ new keyบน already `CANCELLED` → `200`; same key/different Sale → `409`
-- TC-006.5: JSON body รวม `{}` → `400`
-- TC-006.6: invalid UUIDหรือ missing Sale → `404` + `SALE_NOT_FOUND`
-- TC-006.7: operation fail → rollback + separate `FAILED`; retry key → `409`
+- [x] TC-006.1: cancel `PENDING` → `200`, persisted `CANCELLED`, bodyมี exact field set `sale_id` + `status`
+- [x] TC-006.2: cancel `PAID` → `409`, state ไม่เปลี่ยน
+- [x] TC-006.3: expired `PENDING` → `200`, persisted `CANCELLED`
+- [x] TC-006.4: successful retryและ new keyบน already `CANCELLED` → `200`; same key/different Sale → `409`
+- [x] TC-006.5: JSON body รวม `{}` → `400`
+- [x] TC-006.6: invalid UUIDหรือ missing Sale → `404` + `SALE_NOT_FOUND`
+- [x] TC-006.7: operation fail → rollback + separate `FAILED`; retry key → `409`
+
+**Implementation evidence (2026-09-17):**
+
+- Cancel ใช้ per-key advisory lock, transaction และ `SELECT ... FOR UPDATE` บน Sale; shared repository transition บังคับ `PENDING → CANCELLED` เท่านั้น
+- Initial SRG01 reviewพบ `SRG01-T006-001` (MAJOR): successful Create Sale replayสามารถคืน expired Saleเป็น `PENDING` โดยไม่ persist RU01 transition; แก้ด้วย transaction + Sale row lockและเพิ่ม regression test
+- Initial SRG01 reviewพบ `SRG01-T006-002` (MAJOR): cancellation concurrency testsเริ่ม requestพร้อมกันแต่ไม่มี barrierพิสูจน์ overlap; แก้ด้วย deterministic barriersสำหรับ same-key, Cancel-first, Payment-first และ expired Payment/Cancel races
+- Initial SRG01 reviewพบ `SRG01-T006-003` (MAJOR): rollback testไม่ inject failureหลัง successful idempotency write; เพิ่ม final-write-boundary rollback/`FAILED`/retry coverage
+- Post-fix disposable MySQL 8.4 full suiteผ่าน 108/108 testsใน 12 files รวม 12 focused T-006 Cancel tests, 10 Create Sale tests และ T-005 Payment testsทั้ง 16 cases
+- Unit suiteผ่าน 46/46; host regressionผ่าน 57 tests โดย database tests 51 casesถูก skipตาม disposable-context guard; typecheck, lint, build และ `git diff --check`ผ่าน
+- Prompt implementation ถูกเก็บ verbatim ใน `docs/prompts/T-006-cancel-expiration.md`; ไม่มี schema, seed, dependency, scheduler หรือ T-007+ behavior เพิ่ม
+- Independent post-fix SRG01 re-review: PASS — `SRG01-T006-001`–`003` ถูกตรวจซ้ำและ `VERIFIED FIXED`; new findingsเป็น BLOCKER 0, MAJOR 0, MINOR 0; transaction/row-lock/idempotency/race/rollbackและ scope checksผ่าน
+- Final Gate: PASS — focused live MySQL T-006/T-004/T-005 regressionผ่าน 38/38, disposable MySQL 8.4 full suiteผ่าน 108/108, unit 46/46, host regression 57 passed/51 guarded skips, typecheck/lint/build/`git diff --check`ผ่าน; T-006ปิดเป็น `DONE`
 
 **Definition of Done:**
 
-- [ ] Sub-tasksและ Acceptance Criteria ของ T-006 ผ่าน
-- [ ] Strict TypeScript/typecheckและ lintผ่าน; transition logicไม่ซ้ำกับ Payment
-- [ ] TC-006.1–TC-006.7 และ relevant integration testsผ่าน
-- [ ] SRG01 ตรวจ state/expiry/transaction/idempotencyและไม่มี unresolved HIGH/MEDIUM findings
-- [ ] API documentationและ checklistอัปเดต
-- [ ] Prompt audit trail updated
+- [x] Sub-tasksและ Acceptance Criteria ของ T-006 ผ่าน
+- [x] Strict TypeScript/typecheckและ lintผ่าน; transition logicใช้ shared Sale repository transitionเดียวกับ Payment
+- [x] TC-006.1–TC-006.7 และ relevant integration testsผ่าน
+- [x] SRG01 ตรวจ state/expiry/transaction/idempotencyและไม่มี unresolved HIGH/MEDIUM findings
+- [x] API contract/checklistอัปเดต
+- [x] Prompt audit trail updated
 
 ## T-007 Validation + Thai Error Response
 

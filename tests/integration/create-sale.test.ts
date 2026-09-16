@@ -330,6 +330,42 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-004 Create Sale',
     },
   );
 
+  it('persists expiration when a successful Create Sale replay finds an expired pending sale', async () => {
+    const key = `${TEST_KEY_PREFIX}expired-replay`;
+    const now = new Date('2026-09-17T00:00:00.000Z');
+    const first = await request(
+      createLiveApp(new CreateSaleService(getDatabase(), { now: () => now })),
+    )
+      .post('/api/v1/sales')
+      .set('Idempotency-Key', key)
+      .send({ product_code: 'P905' })
+      .expect(201);
+    const firstBody = first.body as unknown as SaleResponse;
+
+    const replay = await request(
+      createLiveApp(
+        new CreateSaleService(getDatabase(), {
+          now: () => new Date(now.getTime() + 5 * 60 * 1000),
+        }),
+      ),
+    )
+      .post('/api/v1/sales')
+      .set('Idempotency-Key', key)
+      .send({ product_code: 'P905' })
+      .expect(200);
+
+    expect(replay.body).toMatchObject({
+      sale_id: firstBody.sale_id,
+      status: 'CANCELLED',
+    });
+    await expect(
+      getDatabase()('sales')
+        .select('status')
+        .where('sale_id', firstBody.sale_id)
+        .first<{ status: string }>(),
+    ).resolves.toEqual({ status: 'CANCELLED' });
+  });
+
   it('returns 404 for a missing product, remembers FAILED separately, and rejects retry', async () => {
     const key = `${TEST_KEY_PREFIX}missing-product`;
     const first = await request(createLiveApp())

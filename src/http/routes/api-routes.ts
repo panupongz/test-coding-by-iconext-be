@@ -5,6 +5,10 @@ import {
   type CreateSaleExecutor,
 } from '../controllers/create-sale-controller.js';
 import {
+  createCancelSaleController,
+  type CancelSaleExecutor,
+} from '../controllers/cancel-sale-controller.js';
+import {
   createPaymentController,
   type PaymentExecutor,
 } from '../controllers/payment-controller.js';
@@ -13,6 +17,7 @@ import { pendingFeatureController } from '../controllers/pending-feature-control
 export const createApiRouter = (
   createSaleService: CreateSaleExecutor,
   paymentService?: PaymentExecutor,
+  cancelSaleService?: CancelSaleExecutor,
 ): Router => {
   const router = Router();
 
@@ -23,7 +28,12 @@ export const createApiRouter = (
       ? pendingFeatureController
       : createPaymentController(paymentService),
   );
-  router.post('/sales/:sale_id/cancel', pendingFeatureController);
+  router.post(
+    '/sales/:sale_id/cancel',
+    cancelSaleService === undefined
+      ? pendingFeatureController
+      : createCancelSaleController(cancelSaleService),
+  );
 
   return router;
 };

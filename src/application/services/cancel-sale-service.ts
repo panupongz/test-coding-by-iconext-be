@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 import type { Knex } from 'knex';
 
@@ -13,17 +13,10 @@ import {
   type IdempotencyRecord,
 } from '../../database/repositories/idempotency-repository.js';
 import { SaleRepository } from '../../database/repositories/sale-repository.js';
-import {
-  SALE_STATUS,
-  toSaleResponse,
-  type SaleResponse,
-  type SaleView,
-} from '../../domain/sale.js';
+import { SALE_STATUS } from '../../domain/sale.js';
 
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
-const SALE_QUANTITY = 1;
-const SALE_EXPIRY_MILLISECONDS = 5 * 60 * 1000;
 const WAIT_FOR_IDEMPOTENCY_LOCK_WITHOUT_TIMEOUT = -1;
 
 interface MysqlError {
@@ -39,26 +32,34 @@ interface ConnectionPoolClient {
   releaseConnection(connection: unknown): Promise<void>;
 }
 
-export interface CreateSaleCommand {
-  readonly productCode: string;
+export interface CancelSaleCommand {
+  readonly saleId: string;
   readonly idempotencyKey: string;
 }
 
-export interface CreateSaleResult {
-  readonly created: boolean;
-  readonly sale: SaleResponse;
+export interface CancelSaleResult {
+  readonly saleId: string;
+  readonly status: typeof SALE_STATUS.cancelled;
 }
 
-export interface CreateSaleServiceOptions {
-  readonly now?: () => Date;
-  readonly generateSaleId?: () => string;
+export interface CancelSaleServiceOptions {
   readonly saleRepository?: SaleRepository;
   readonly idempotencyRepository?: IdempotencyRepository;
+  readonly beforeAdvisoryLock?: () => Promise<void>;
+  readonly afterProcessingInserted?: () => Promise<void>;
+  readonly afterSaleLocked?: () => Promise<void>;
+  readonly failAfterSaleUpdate?: boolean;
+  readonly failAfterIdempotencySuccess?: boolean;
 }
 
-const createFingerprint = (productCode: string): string =>
+const createFingerprint = (saleId: string): string =>
   createHash('sha256')
-    .update(JSON.stringify({ operation: IDEMPOTENCY_OPERATION.createSale, product_code: productCode }))
+    .update(
+      JSON.stringify({
+        operation: IDEMPOTENCY_OPERATION.cancel,
+        sale_id: saleId,
+      }),
+    )
     .digest('hex');
 
 const isDuplicateEntryError = (error: unknown): boolean =>
@@ -66,25 +67,34 @@ const isDuplicateEntryError = (error: unknown): boolean =>
   error !== null &&
   (error as MysqlError).code === 'ER_DUP_ENTRY';
 
-export class CreateSaleService {
-  private readonly now: () => Date;
-  private readonly generateSaleId: () => string;
+export class CancelSaleService {
   private readonly saleRepository: SaleRepository;
   private readonly idempotencyRepository: IdempotencyRepository;
+  private readonly beforeAdvisoryLock: () => Promise<void>;
+  private readonly afterProcessingInserted: () => Promise<void>;
+  private readonly afterSaleLocked: () => Promise<void>;
+  private readonly failAfterSaleUpdate: boolean;
+  private readonly failAfterIdempotencySuccess: boolean;
 
   public constructor(
     private readonly database: Knex,
-    options: CreateSaleServiceOptions = {},
+    options: CancelSaleServiceOptions = {},
   ) {
-    this.now = options.now ?? (() => new Date());
-    this.generateSaleId = options.generateSaleId ?? randomUUID;
     this.saleRepository = options.saleRepository ?? new SaleRepository();
     this.idempotencyRepository =
       options.idempotencyRepository ?? new IdempotencyRepository();
+    this.beforeAdvisoryLock =
+      options.beforeAdvisoryLock ?? (() => Promise.resolve());
+    this.afterProcessingInserted =
+      options.afterProcessingInserted ?? (() => Promise.resolve());
+    this.afterSaleLocked = options.afterSaleLocked ?? (() => Promise.resolve());
+    this.failAfterSaleUpdate = options.failAfterSaleUpdate ?? false;
+    this.failAfterIdempotencySuccess =
+      options.failAfterIdempotencySuccess ?? false;
   }
 
-  public async execute(command: CreateSaleCommand): Promise<CreateSaleResult> {
-    const requestFingerprint = createFingerprint(command.productCode);
+  public async execute(command: CancelSaleCommand): Promise<CancelSaleResult> {
+    const requestFingerprint = createFingerprint(command.saleId);
     const lockName = createHash('sha256')
       .update(`idempotency:${command.idempotencyKey}`)
       .digest('hex');
@@ -92,6 +102,7 @@ export class CreateSaleService {
     const connection = await poolClient.acquireConnection();
 
     try {
+      await this.beforeAdvisoryLock();
       const lockResult = (await this.database
         .raw('SELECT GET_LOCK(?, ?) AS acquired', [
           lockName,
@@ -120,69 +131,70 @@ export class CreateSaleService {
   }
 
   private async executeWhileLocked(
-    command: CreateSaleCommand,
+    command: CancelSaleCommand,
     requestFingerprint: string,
     connection: unknown,
-  ): Promise<CreateSaleResult> {
+  ): Promise<CancelSaleResult> {
     try {
-      const sale = await this.database.transaction(async (transaction) => {
+      await this.database.transaction(async (transaction) => {
         await this.idempotencyRepository.insertProcessing(
           transaction,
           command.idempotencyKey,
           requestFingerprint,
+          IDEMPOTENCY_OPERATION.cancel,
         );
+        await this.afterProcessingInserted();
 
-        const product = await this.saleRepository.findAvailableProduct(
+        const sale = await this.saleRepository.findByIdForUpdate(
           transaction,
-          command.productCode,
+          command.saleId,
         );
 
-        if (product === undefined) {
+        if (sale === undefined) {
           throw new ApplicationError(
             HTTP_NOT_FOUND,
-            ERROR_CODES.productNotFound,
-            'ไม่พบสินค้า',
+            ERROR_CODES.saleNotFound,
+            'ไม่พบรายการขาย',
+          );
+        }
+        await this.afterSaleLocked();
+
+        if (sale.status === SALE_STATUS.paid) {
+          throw new ApplicationError(
+            HTTP_CONFLICT,
+            ERROR_CODES.saleAlreadyPaid,
+            'รายการขายนี้ชำระเงินแล้ว',
           );
         }
 
-        const createdAt = this.now();
-        const expiresAt = new Date(createdAt.getTime() + SALE_EXPIRY_MILLISECONDS);
-        const saleId = this.generateSaleId();
+        if (sale.status === SALE_STATUS.pending) {
+          await this.saleRepository.markCancelled(transaction, sale.saleId);
+        }
 
-        await this.saleRepository.insert(transaction, {
-          saleId,
-          productId: product.id,
-          unitPrice: product.price,
-          quantity: SALE_QUANTITY,
-          status: SALE_STATUS.pending,
-          createdAt,
-          expiresAt,
-        });
+        if (this.failAfterSaleUpdate) {
+          throw new Error('Injected failure after sale update');
+        }
+
         await this.idempotencyRepository.markSucceeded(
           transaction,
           command.idempotencyKey,
-          saleId,
+          sale.saleId,
         );
 
-        return {
-          saleId,
-          productCode: product.productCode,
-          name: product.name,
-          unitPrice: product.price,
-          quantity: SALE_QUANTITY,
-          status: SALE_STATUS.pending,
-          createdAt,
-          expiresAt,
-        } satisfies SaleView;
+        if (this.failAfterIdempotencySuccess) {
+          throw new Error('Injected failure after idempotency success');
+        }
       }, { connection });
 
-      return { created: true, sale: toSaleResponse(sale) };
+      return {
+        saleId: command.saleId,
+        status: SALE_STATUS.cancelled,
+      };
     } catch (error: unknown) {
       if (isDuplicateEntryError(error)) {
         return this.resolveExisting(
           command.idempotencyKey,
           requestFingerprint,
-          connection,
         );
       }
 
@@ -198,8 +210,7 @@ export class CreateSaleService {
   private async resolveExisting(
     key: string,
     requestFingerprint: string,
-    connection: unknown,
-  ): Promise<CreateSaleResult> {
+  ): Promise<CancelSaleResult> {
     const record = await this.idempotencyRepository.find(this.database, key);
 
     if (record === undefined) {
@@ -216,45 +227,21 @@ export class CreateSaleService {
       );
     }
 
-    if (record.status !== IDEMPOTENCY_STATUS.succeeded || record.saleId === null) {
+    if (
+      record.status !== IDEMPOTENCY_STATUS.succeeded ||
+      record.saleId === null
+    ) {
       throw new ApplicationError(
         HTTP_CONFLICT,
         ERROR_CODES.idempotencyConflict,
         'Idempotency-Key นี้กำลังถูกใช้งาน',
       );
     }
-    const saleId = record.saleId;
 
-    const sale = await this.database.transaction(async (transaction) => {
-      const lockedSale = await this.saleRepository.findByIdForUpdate(
-        transaction,
-        saleId,
-      );
-
-      if (lockedSale === undefined) {
-        throw new Error('Succeeded idempotency record references a missing sale');
-      }
-
-      if (
-        lockedSale.status === SALE_STATUS.pending &&
-        lockedSale.expiresAt.getTime() <= this.now().getTime()
-      ) {
-        await this.saleRepository.markCancelled(transaction, lockedSale.saleId);
-      }
-
-      const currentSale = await this.saleRepository.findView(
-        transaction,
-        lockedSale.saleId,
-      );
-
-      if (currentSale === undefined) {
-        throw new Error('Locked sale was not readable');
-      }
-
-      return currentSale;
-    }, { connection });
-
-    return { created: false, sale: toSaleResponse(sale) };
+    return {
+      saleId: record.saleId,
+      status: SALE_STATUS.cancelled,
+    };
   }
 
   private assertSameRequest(
@@ -262,7 +249,7 @@ export class CreateSaleService {
     requestFingerprint: string,
   ): void {
     if (
-      record.operationType !== IDEMPOTENCY_OPERATION.createSale ||
+      record.operationType !== IDEMPOTENCY_OPERATION.cancel ||
       record.requestFingerprint !== requestFingerprint
     ) {
       throw new ApplicationError(
@@ -284,6 +271,7 @@ export class CreateSaleService {
           transaction,
           key,
           requestFingerprint,
+          IDEMPOTENCY_OPERATION.cancel,
         );
       }, { connection });
     } catch (error: unknown) {

@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import type { Logger } from 'pino';
 
 import type { CreateSaleExecutor } from './http/controllers/create-sale-controller.js';
+import type { CancelSaleExecutor } from './http/controllers/cancel-sale-controller.js';
 import type { PaymentExecutor } from './http/controllers/payment-controller.js';
 import { createErrorHandler, notFoundHandler } from './http/middleware/error-handler.js';
 import { createRequestLogger } from './http/middleware/request-logger.js';
@@ -14,6 +15,7 @@ export const createApp = (
   logger: Logger,
   createSaleService: CreateSaleExecutor,
   paymentService?: PaymentExecutor,
+  cancelSaleService?: CancelSaleExecutor,
 ): Express => {
   const app = express();
 
@@ -21,7 +23,10 @@ export const createApp = (
   app.use(helmet());
   app.use(express.json({ limit: JSON_BODY_LIMIT, strict: true }));
   app.use(createRequestLogger(logger));
-  app.use('/api/v1', createApiRouter(createSaleService, paymentService));
+  app.use(
+    '/api/v1',
+    createApiRouter(createSaleService, paymentService, cancelSaleService),
+  );
   app.use(notFoundHandler);
   app.use(createErrorHandler(logger));
 
