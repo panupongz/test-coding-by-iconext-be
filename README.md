@@ -1,6 +1,6 @@
 # test-coding-by-iconext-be
 
-Node.js, TypeScript, Express, and MySQL backend for the ICONEXT coding exercise. T-001 exposes only the three approved action-route placeholders, and T-002 provides their database schema; API business behavior belongs to later tasks.
+Node.js, TypeScript, Express, and MySQL backend for the ICONEXT coding exercise. The Create Sale action is implemented; Payment and Cancel remain placeholders for their owning tasks.
 
 ## Prerequisites
 
@@ -75,14 +75,25 @@ npm run db:migrate:production
 npm run db:seed:production
 ```
 
-## API foundation
+## API
 
-The following routes are registered without authentication and return `501 Not Implemented` until their owning tasks add approved behavior:
+The routes are registered without authentication. Create Sale is available:
 
-- `POST /api/v1/sales`
+```http
+POST /api/v1/sales
+Idempotency-Key: client-generated-key
+Content-Type: application/json
+
+{"product_code":"P001"}
+```
+
+A first success returns `201`; a successful retry with the same key and request returns the current Sale with `200`. The body contains only `sale_id`, `product_code`, `name`, `unit_price`, `quantity`, `total`, `status`, `created_at`, and `expires_at`. New Sales use `PENDING`, quantity `1`, the Product price captured at creation, and a five-minute expiry. A key used for a different request or an operation previously recorded as failed returns `409`.
+
+The following registered actions still return `501 Not Implemented` until their owning tasks add approved behavior:
+
 - `POST /api/v1/sales/:sale_id/payment`
 - `POST /api/v1/sales/:sale_id/cancel`
 
 There are no GET, DELETE, Product CRUD, login, role, or stock routes. Container health uses a TCP check rather than adding an unapproved HTTP route.
 
-The current concrete flow is route → HTTP-only placeholder controller, with database connection and runner boundaries under `src/database`. Services and repositories will be introduced only when later tasks add concrete business operations; T-001 does not add empty abstractions merely to mirror the future dependency diagram.
+Create Sale follows route → controller → service → repository → MySQL. Its controller owns strict HTTP validation, while its service owns idempotency and transaction orchestration. Payment and Cancel still use the T-001 placeholder controller.

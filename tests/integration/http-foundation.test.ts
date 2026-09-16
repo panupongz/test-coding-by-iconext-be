@@ -7,19 +7,36 @@ import { createErrorHandler } from '../../src/http/middleware/error-handler.js';
 import { createLogger } from '../../src/infrastructure/logger.js';
 
 const logger = createLogger('silent');
-const app = createApp(logger);
+const createSaleService = {
+  execute: () =>
+    Promise.reject(
+      new Error('Create Sale service must not be called by foundation tests'),
+    ),
+};
+const app = createApp(logger, createSaleService);
 
-const ACTION_ROUTES = [
-  '/api/v1/sales',
+const PENDING_ACTION_ROUTES = [
   '/api/v1/sales/5fe1c13b-b0b4-47d6-8e4f-d0ce39596176/payment',
   '/api/v1/sales/5fe1c13b-b0b4-47d6-8e4f-d0ce39596176/cancel',
 ] as const;
 
+const ACTION_ROUTES = ['/api/v1/sales', ...PENDING_ACTION_ROUTES] as const;
+
 describe('HTTP foundation', () => {
-  it.each(ACTION_ROUTES)('registers POST %s without requiring authentication', async (path) => {
+  it.each(PENDING_ACTION_ROUTES)('registers pending POST %s without requiring authentication', async (path) => {
     const response = await request(app).post(path).send({});
 
     expect(response.status).toBe(501);
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+  });
+
+  it('registers Create Sale without requiring authentication', async () => {
+    const response = await request(app).post('/api/v1/sales').send({});
+
+    expect(response.status).toBe(400);
+    expect(
+      (response.body as unknown as { error: { code: string } }).error.code,
+    ).toBe('IDEMPOTENCY_KEY_REQUIRED');
     expect(response.headers['x-content-type-options']).toBe('nosniff');
   });
 

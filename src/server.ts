@@ -5,6 +5,7 @@ import type { Server } from 'node:http';
 import type { Express } from 'express';
 
 import { createApp } from './app.js';
+import { CreateSaleService } from './application/services/create-sale-service.js';
 import { loadConfig } from './config/environment.js';
 import { createDatabase, probeDatabase, type Database } from './database/connection.js';
 import { waitForDatabase } from './database/readiness.js';
@@ -73,7 +74,10 @@ const main = async (): Promise<void> => {
       logger,
     );
 
-    const server = await listen(createApp(logger), config.port);
+    const server = await listen(
+      createApp(logger, new CreateSaleService(database)),
+      config.port,
+    );
     registerShutdownHandlers(server, database, logger);
     logger.info(
       {

@@ -1,6 +1,6 @@
 # Backend implementation checklist
 
-สถานะเอกสาร: **T-001 DONE; T-002 DONE; T-003 DONE — Final Gate ผ่านหลัง SRG01 PASS และ audit completion**
+สถานะเอกสาร: **T-001 DONE; T-002 DONE; T-003 DONE; T-004 DONE — Final Gate ผ่านหลัง SRG01 PASS และ audit completion**
 
 ## Source of Truth และวิธีอ่าน
 
@@ -419,7 +419,7 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 ## T-004 Create Sale
 
-**Current Status:** TODO
+**Current Status:** DONE
 
 **Objective:** Implement Create Sale ให้ validate, snapshotราคา, persistแบบ atomic และรองรับ idempotency/concurrency ตาม approved decisions
 
@@ -427,14 +427,14 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 **Sub-tasks:**
 
-- [ ] `POST /api/v1/sales` รับ body เฉพาะ `product_code` และ client `Idempotency-Key`
-- [ ] code ผิด patternตอบ `400`; code ถูก format แต่ไม่มี Productตอบ `404`; strict validation failureตอบ `400`
-- [ ] อนุญาต code เดิมสำหรับ Sale คนละรายการ/key; Sale มี Product เดียวและ `quantity = 1`; backend snapshotราคา
-- [ ] สร้าง UUID Sale เป็น `PENDING`; server กำหนดเวลาและ `expires_at = completion time + 5 minutes`; เก็บ UTC/ส่ง ISO 8601
-- [ ] first successตอบ `201` พร้อม Sale data ที่ Q079 ระบุและไม่ส่ง key/internal data
-- [ ] successful same key + same requestตอบ `200` พร้อม current Sale data/status แม้เป็น `PAID`/`CANCELLED`
-- [ ] same key + different requestตอบ `409`; concurrent same key/same request รอผลแรก
-- [ ] operation fail ให้ rollback business transaction, persist `FAILED` แยก และ retry key เดิมตอบ `409`
+- [x] `POST /api/v1/sales` รับ body เฉพาะ `product_code` และ client `Idempotency-Key`
+- [x] code ผิด patternตอบ `400`; code ถูก format แต่ไม่มี Productตอบ `404`; strict validation failureตอบ `400`
+- [x] อนุญาต code เดิมสำหรับ Sale คนละรายการ/key; Sale มี Product เดียวและ `quantity = 1`; backend snapshotราคา
+- [x] สร้าง UUID Sale เป็น `PENDING`; server กำหนดเวลาและ `expires_at = completion time + 5 minutes`; เก็บ UTC/ส่ง ISO 8601
+- [x] first successตอบ `201` พร้อม Sale data ที่ Q079 ระบุและไม่ส่ง key/internal data
+- [x] successful same key + same requestตอบ `200` พร้อม current Sale data/status แม้เป็น `PAID`/`CANCELLED`
+- [x] same key + different requestตอบ `409`; concurrent same key/same request รอผลแรก
+- [x] operation fail ให้ rollback business transaction, persist `FAILED` แยก และ retry key เดิมตอบ `409`
 
 **Acceptance Criteria:** first success `201`; successful retry `200`; duplicate/concurrent request ไม่สร้าง Sale เพิ่ม; failed key ถูกจำและใช้ซ้ำไม่ได้
 
@@ -447,14 +447,22 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 - TC-004.5: retry หลัง Sale เป็น `PAID`/`CANCELLED` → `200` + current Sale data/status
 - TC-004.6: operation fail → business rollback + separate `FAILED`; retry key → `409`
 
+**Implementation evidence:**
+
+- Create Sale ใช้ Route → Controller → Service → Repository → MySQL; strict body/header validationและ Thai fixed-code error contractอยู่ที่ HTTP boundary
+- Service สร้าง deterministic SHA-256 request fingerprint, serialize keyด้วย MySQL advisory lockแบบรอจนได้ final result และอ่าน current Sale stateสำหรับ successful replay
+- Sale + `SUCCEEDED` idempotency commitใน transactionเดียว; failure rollbackก่อน persist `FAILED` ใน transactionแยกขณะยังถือ key lock
+- Live testsยืนยัน UUID, price snapshot, quantity `1`, `PENDING`, UTC ISO response, expiry +5 minutes, replayหลัง `PAID`/`CANCELLED`, different-request conflict, success/failure concurrency และ rollback
+- Final Gate: typecheck, lint, build, unit/integration/full host suitesผ่าน; clean disposable MySQL 8.4 suiteผ่าน 57/57; SRG01 findingเรื่อง bounded concurrent waitถูกแก้และไม่มี unresolved BLOCKER/MAJOR/MINOR
+
 **Definition of Done:**
 
-- [ ] Sub-tasksและ Acceptance Criteria ของ T-004 ผ่าน
-- [ ] Strict TypeScript/typecheckและ lintผ่าน; Controllerไม่มี complex business logic
-- [ ] TC-004.1–TC-004.6 และ relevant unit/integration testsผ่าน
-- [ ] SRG01 ตรวจ transaction/idempotency/validationและไม่มี unresolved HIGH/MEDIUM findings
-- [ ] API documentationและ checklistอัปเดต
-- [ ] Prompt audit trail updated
+- [x] Sub-tasksและ Acceptance Criteria ของ T-004 ผ่าน
+- [x] Strict TypeScript/typecheckและ lintผ่าน; Controllerไม่มี complex business logic
+- [x] TC-004.1–TC-004.6 และ relevant unit/integration testsผ่าน
+- [x] SRG01 ตรวจ transaction/idempotency/validationและไม่มี unresolved HIGH/MEDIUM findings
+- [x] API documentationและ checklistอัปเดต
+- [x] Prompt audit trail updated
 
 ## T-005 Payment + Concurrency + Idempotency
 
