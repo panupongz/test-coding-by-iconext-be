@@ -14,6 +14,7 @@ import {
 } from '../../database/repositories/idempotency-repository.js';
 import { SaleRepository } from '../../database/repositories/sale-repository.js';
 import { SALE_STATUS } from '../../domain/sale.js';
+import { createRequestFingerprint } from '../request-fingerprint.js';
 
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
@@ -45,22 +46,15 @@ export interface CancelSaleResult {
 export interface CancelSaleServiceOptions {
   readonly saleRepository?: SaleRepository;
   readonly idempotencyRepository?: IdempotencyRepository;
-  readonly beforeAdvisoryLock?: () => Promise<void>;
-  readonly afterProcessingInserted?: () => Promise<void>;
   readonly afterSaleLocked?: () => Promise<void>;
   readonly failAfterSaleUpdate?: boolean;
   readonly failAfterIdempotencySuccess?: boolean;
 }
 
 const createFingerprint = (saleId: string): string =>
-  createHash('sha256')
-    .update(
-      JSON.stringify({
-        operation: IDEMPOTENCY_OPERATION.cancel,
-        sale_id: saleId,
-      }),
-    )
-    .digest('hex');
+  createRequestFingerprint(IDEMPOTENCY_OPERATION.cancel, {
+    sale_id: saleId.toLowerCase(),
+  });
 
 const isDuplicateEntryError = (error: unknown): boolean =>
   typeof error === 'object' &&
@@ -70,8 +64,6 @@ const isDuplicateEntryError = (error: unknown): boolean =>
 export class CancelSaleService {
   private readonly saleRepository: SaleRepository;
   private readonly idempotencyRepository: IdempotencyRepository;
-  private readonly beforeAdvisoryLock: () => Promise<void>;
-  private readonly afterProcessingInserted: () => Promise<void>;
   private readonly afterSaleLocked: () => Promise<void>;
   private readonly failAfterSaleUpdate: boolean;
   private readonly failAfterIdempotencySuccess: boolean;
@@ -83,10 +75,6 @@ export class CancelSaleService {
     this.saleRepository = options.saleRepository ?? new SaleRepository();
     this.idempotencyRepository =
       options.idempotencyRepository ?? new IdempotencyRepository();
-    this.beforeAdvisoryLock =
-      options.beforeAdvisoryLock ?? (() => Promise.resolve());
-    this.afterProcessingInserted =
-      options.afterProcessingInserted ?? (() => Promise.resolve());
     this.afterSaleLocked = options.afterSaleLocked ?? (() => Promise.resolve());
     this.failAfterSaleUpdate = options.failAfterSaleUpdate ?? false;
     this.failAfterIdempotencySuccess =
@@ -102,7 +90,6 @@ export class CancelSaleService {
     const connection = await poolClient.acquireConnection();
 
     try {
-      await this.beforeAdvisoryLock();
       const lockResult = (await this.database
         .raw('SELECT GET_LOCK(?, ?) AS acquired', [
           lockName,
@@ -143,8 +130,6 @@ export class CancelSaleService {
           requestFingerprint,
           IDEMPOTENCY_OPERATION.cancel,
         );
-        await this.afterProcessingInserted();
-
         const sale = await this.saleRepository.findByIdForUpdate(
           transaction,
           command.saleId,
@@ -190,10 +175,14 @@ export class CancelSaleService {
       };
     } catch (error: unknown) {
       if (isDuplicateEntryError(error)) {
-        return this.resolveExisting(
+        const existingRecord = await this.idempotencyRepository.find(
+          this.database,
           command.idempotencyKey,
-          requestFingerprint,
         );
+
+        if (existingRecord !== undefined) {
+          return this.resolveExisting(existingRecord, requestFingerprint);
+        }
       }
 
       await this.rememberFailure(
@@ -205,16 +194,10 @@ export class CancelSaleService {
     }
   }
 
-  private async resolveExisting(
-    key: string,
+  private resolveExisting(
+    record: IdempotencyRecord,
     requestFingerprint: string,
-  ): Promise<CancelSaleResult> {
-    const record = await this.idempotencyRepository.find(this.database, key);
-
-    if (record === undefined) {
-      throw new Error('Duplicate idempotency key was not readable after conflict');
-    }
-
+  ): CancelSaleResult {
     this.assertSameRequest(record, requestFingerprint);
 
     if (record.status === IDEMPOTENCY_STATUS.failed) {

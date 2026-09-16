@@ -19,6 +19,7 @@ import {
   type SaleResponse,
   type SaleView,
 } from '../../domain/sale.js';
+import { createRequestFingerprint } from '../request-fingerprint.js';
 
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
@@ -54,12 +55,15 @@ export interface CreateSaleServiceOptions {
   readonly generateSaleId?: () => string;
   readonly saleRepository?: SaleRepository;
   readonly idempotencyRepository?: IdempotencyRepository;
+  readonly afterSaleInserted?: () => Promise<void>;
+  readonly failAfterSaleInsert?: boolean;
+  readonly failAfterIdempotencySuccess?: boolean;
 }
 
 const createFingerprint = (productCode: string): string =>
-  createHash('sha256')
-    .update(JSON.stringify({ operation: IDEMPOTENCY_OPERATION.createSale, product_code: productCode }))
-    .digest('hex');
+  createRequestFingerprint(IDEMPOTENCY_OPERATION.createSale, {
+    product_code: productCode,
+  });
 
 const isDuplicateEntryError = (error: unknown): boolean =>
   typeof error === 'object' &&
@@ -71,6 +75,9 @@ export class CreateSaleService {
   private readonly generateSaleId: () => string;
   private readonly saleRepository: SaleRepository;
   private readonly idempotencyRepository: IdempotencyRepository;
+  private readonly afterSaleInserted: () => Promise<void>;
+  private readonly failAfterSaleInsert: boolean;
+  private readonly failAfterIdempotencySuccess: boolean;
 
   public constructor(
     private readonly database: Knex,
@@ -81,6 +88,11 @@ export class CreateSaleService {
     this.saleRepository = options.saleRepository ?? new SaleRepository();
     this.idempotencyRepository =
       options.idempotencyRepository ?? new IdempotencyRepository();
+    this.afterSaleInserted =
+      options.afterSaleInserted ?? (() => Promise.resolve());
+    this.failAfterSaleInsert = options.failAfterSaleInsert ?? false;
+    this.failAfterIdempotencySuccess =
+      options.failAfterIdempotencySuccess ?? false;
   }
 
   public async execute(command: CreateSaleCommand): Promise<CreateSaleResult> {
@@ -131,7 +143,6 @@ export class CreateSaleService {
           command.idempotencyKey,
           requestFingerprint,
         );
-
         const product = await this.saleRepository.findAvailableProduct(
           transaction,
           command.productCode,
@@ -157,11 +168,21 @@ export class CreateSaleService {
           createdAt,
           expiresAt,
         });
+        await this.afterSaleInserted();
+
+        if (this.failAfterSaleInsert) {
+          throw new Error('Injected failure after sale insert');
+        }
+
         await this.idempotencyRepository.markSucceeded(
           transaction,
           command.idempotencyKey,
           saleId,
         );
+
+        if (this.failAfterIdempotencySuccess) {
+          throw new Error('Injected failure after idempotency success');
+        }
 
         return {
           saleId,
@@ -178,11 +199,18 @@ export class CreateSaleService {
       return { created: true, sale: toSaleResponse(sale) };
     } catch (error: unknown) {
       if (isDuplicateEntryError(error)) {
-        return this.resolveExisting(
+        const existingRecord = await this.idempotencyRepository.find(
+          this.database,
           command.idempotencyKey,
-          requestFingerprint,
-          connection,
         );
+
+        if (existingRecord !== undefined) {
+          return this.resolveExisting(
+            existingRecord,
+            requestFingerprint,
+            connection,
+          );
+        }
       }
 
       await this.rememberFailure(
@@ -195,16 +223,10 @@ export class CreateSaleService {
   }
 
   private async resolveExisting(
-    key: string,
+    record: IdempotencyRecord,
     requestFingerprint: string,
     connection: unknown,
   ): Promise<CreateSaleResult> {
-    const record = await this.idempotencyRepository.find(this.database, key);
-
-    if (record === undefined) {
-      throw new Error('Duplicate idempotency key was not readable after conflict');
-    }
-
     this.assertSameRequest(record, requestFingerprint);
 
     if (record.status === IDEMPOTENCY_STATUS.failed) {

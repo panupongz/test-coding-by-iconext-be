@@ -128,3 +128,9 @@ Error codes are limited to `VALIDATION_ERROR`, `MALFORMED_JSON`, `INVALID_PRODUC
 There are no GET, DELETE, Product CRUD, login, role, or stock routes. Container health uses a TCP check rather than adding an unapproved HTTP route.
 
 All three actions follow route → controller → service → repository → MySQL. Controllers own strict HTTP validation, while services own idempotency, state, locking, and transaction orchestration. Shared error primitives enforce the fixed code and Thai-message catalog across the HTTP boundary.
+
+## Transaction and integrity design
+
+Create Sale, Payment, Cancel, and request-driven expiration transitions use short Knex transactions without overriding MySQL's configured default isolation level. A successful business write and its `SUCCEEDED` idempotency state commit in the same transaction. If the operation fails, that transaction rolls back before a separate transaction inserts the terminal `FAILED` idempotency state; retrying the key then returns `409`.
+
+Every action derives a canonical SHA-256 fingerprint from its operation and logical request fields. A MySQL advisory lock scoped to the idempotency key serializes same-key requests on a pinned connection, so a waiter observes the first request's committed `SUCCEEDED` or `FAILED` result. Payment and Cancel also lock the Sale row with `SELECT ... FOR UPDATE`; Payment rechecks expiration before commit. The database remains the final integrity boundary through the Product-code, idempotency-key, and Payment-Sale unique indexes and the Sale/Product, Payment/Sale, and idempotency-resource foreign keys. Idempotency rows store the fingerprint and resource identifiers, not a full HTTP response body.

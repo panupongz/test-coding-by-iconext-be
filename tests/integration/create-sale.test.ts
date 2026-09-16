@@ -9,6 +9,7 @@ import { loadConfig } from '../../src/config/environment.js';
 import { createDatabase, type Database } from '../../src/database/connection.js';
 import { createLogger } from '../../src/infrastructure/logger.js';
 import type { SaleResponse } from '../../src/domain/sale.js';
+import { waitForAdvisoryLockWait } from '../support/database-lock-wait.js';
 import { isDisposableDatabaseTestContext } from '../support/database-test-context.js';
 
 const REQUIRED_DATABASE_ENVIRONMENT_VARIABLES = [
@@ -106,6 +107,21 @@ interface ErrorResponse {
 }
 
 let database: Database | undefined;
+
+const createDeferred = (): {
+  readonly promise: Promise<void>;
+  readonly resolve: () => void;
+} => {
+  let resolvePromise: (() => void) | undefined;
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = resolve;
+  });
+
+  return {
+    promise,
+    resolve: () => resolvePromise?.(),
+  };
+};
 
 const getDatabase = (): Database => {
   if (database === undefined) {
@@ -268,27 +284,40 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-004 Create Sale',
     );
   });
 
-  it('serializes concurrent same-key requests to one sale', async () => {
-    const app = createLiveApp();
+  it('serializes overlapping same-key requests to one sale', async () => {
     const key = `${TEST_KEY_PREFIX}concurrent`;
-    const responses = await Promise.all(
-      Array.from({ length: 8 }, async () =>
-        request(app)
-          .post('/api/v1/sales')
-          .set('Idempotency-Key', key)
-          .send({ product_code: 'P904' }),
-      ),
+    const firstInserted = createDeferred();
+    const releaseFirst = createDeferred();
+    const firstApp = createLiveApp(
+      new CreateSaleService(getDatabase(), {
+        afterSaleInserted: async () => {
+          firstInserted.resolve();
+          await releaseFirst.promise;
+        },
+      }),
     );
+    const secondApp = createLiveApp();
+    const firstResponse = request(firstApp)
+      .post('/api/v1/sales')
+      .set('Idempotency-Key', key)
+      .send({ product_code: 'P904' })
+      .then((response) => response);
+    await firstInserted.promise;
+    const secondResponse = request(secondApp)
+      .post('/api/v1/sales')
+      .set('Idempotency-Key', key)
+      .send({ product_code: 'P904' })
+      .then((response) => response);
+    await waitForAdvisoryLockWait(getDatabase(), key);
+    releaseFirst.resolve();
+    const [first, second] = await Promise.all([
+      firstResponse,
+      secondResponse,
+    ]);
 
-    expect(responses.filter(({ status }) => status === 201)).toHaveLength(1);
-    expect(responses.filter(({ status }) => status === 200)).toHaveLength(7);
-    expect(
-      new Set(
-        responses.map(
-          ({ body }) => (body as unknown as SaleResponse).sale_id,
-        ),
-      ),
-    ).toHaveLength(1);
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(200);
+    expect(second.body).toEqual(first.body);
 
     const record = await getDatabase()('idempotency_keys')
       .select('sale_id')
@@ -425,6 +454,94 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-004 Create Sale',
       code: 'IDEMPOTENCY_FAILED',
     });
   });
+
+  it('persists FAILED when a non-idempotency unique constraint rejects the Sale', async () => {
+    const duplicateSaleId = '99999999-9999-4999-8999-999999999999';
+    await new CreateSaleService(getDatabase(), {
+      generateSaleId: () => duplicateSaleId,
+    }).execute({
+      productCode: 'P901',
+      idempotencyKey: `${TEST_KEY_PREFIX}duplicate-sale-source`,
+    });
+    const failedKey = `${TEST_KEY_PREFIX}duplicate-sale-target`;
+
+    await expect(
+      new CreateSaleService(getDatabase(), {
+        generateSaleId: () => duplicateSaleId,
+      }).execute({
+        productCode: 'P901',
+        idempotencyKey: failedKey,
+      }),
+    ).rejects.toBeDefined();
+
+    await expect(
+      getDatabase()('idempotency_keys')
+        .select('status', 'sale_id')
+        .where('key', failedKey)
+        .first<IdempotencyStatusRow>(),
+    ).resolves.toEqual({ status: 'FAILED', sale_id: null });
+
+    await expect(
+      new CreateSaleService(getDatabase()).execute({
+        productCode: 'P901',
+        idempotencyKey: failedKey,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'IDEMPOTENCY_FAILED',
+    });
+  });
+
+  it.each([
+    ['Sale insert', 'sale-insert'],
+    ['successful idempotency write', 'idempotency-success'],
+  ] as const)(
+    'rolls back after the %s before persisting FAILED separately',
+    async (_name, failurePoint) => {
+      const key = `${TEST_KEY_PREFIX}rollback-${failurePoint}`;
+      const saleId =
+        failurePoint === 'sale-insert'
+          ? '77777777-7777-4777-8777-777777777777'
+          : '88888888-8888-4888-8888-888888888888';
+      const service = new CreateSaleService(
+        getDatabase(),
+        failurePoint === 'sale-insert'
+          ? { failAfterSaleInsert: true, generateSaleId: () => saleId }
+          : {
+              failAfterIdempotencySuccess: true,
+              generateSaleId: () => saleId,
+            },
+      );
+
+      await expect(
+        service.execute({ productCode: 'P901', idempotencyKey: key }),
+      ).rejects.toThrow(
+        `Injected failure after ${failurePoint === 'sale-insert' ? 'sale insert' : 'idempotency success'}`,
+      );
+
+      const saleCount = await getDatabase()('sales')
+        .where('sale_id', saleId)
+        .count<{ count: number }>({ count: '*' })
+        .first();
+      expect(Number(saleCount?.count)).toBe(0);
+      await expect(
+        getDatabase()('idempotency_keys')
+          .select('status', 'sale_id')
+          .where({ key })
+          .first<IdempotencyStatusRow>(),
+      ).resolves.toEqual({ status: 'FAILED', sale_id: null });
+
+      await expect(
+        new CreateSaleService(getDatabase()).execute({
+          productCode: 'P901',
+          idempotencyKey: key,
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'IDEMPOTENCY_FAILED',
+      });
+    },
+  );
 
   it('serializes a concurrent request through separate FAILED persistence', async () => {
     const key = `${TEST_KEY_PREFIX}concurrent-failure`;

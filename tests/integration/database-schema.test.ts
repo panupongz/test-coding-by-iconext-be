@@ -86,6 +86,11 @@ interface CheckMetadata {
   readonly CONSTRAINT_NAME: string;
 }
 
+interface IsolationMetadata {
+  readonly global_isolation: string;
+  readonly session_isolation: string;
+}
+
 interface ProductIdRow {
   readonly id: number;
 }
@@ -297,6 +302,14 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-002 database sche
     });
     expect(columns.has('sales.deleted_at')).toBe(false);
     expect(columns.has('payments.deleted_at')).toBe(false);
+  });
+
+  it('uses the configured MySQL default transaction isolation level', async () => {
+    const [rows] = (await getTestDatabase().raw(
+      'SELECT @@global.transaction_isolation AS global_isolation, @@session.transaction_isolation AS session_isolation',
+    )) as [IsolationMetadata[]];
+
+    expect(rows[0]?.session_isolation).toBe(rows[0]?.global_isolation);
   });
 
   it('creates the required primary keys, foreign keys, and non-cascading rules', async () => {

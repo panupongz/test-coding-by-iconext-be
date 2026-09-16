@@ -10,6 +10,10 @@ import { createApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config/environment.js';
 import { createDatabase, type Database } from '../../src/database/connection.js';
 import { createLogger } from '../../src/infrastructure/logger.js';
+import {
+  waitForAdvisoryLockWait,
+  waitForSaleRowLockWait,
+} from '../support/database-lock-wait.js';
 import { isDisposableDatabaseTestContext } from '../support/database-test-context.js';
 
 const REQUIRED_DATABASE_ENVIRONMENT_VARIABLES = [
@@ -136,6 +140,7 @@ const cleanupTestRecords = async (): Promise<void> => {
 const createSale = async (
   status = 'PENDING',
   expiresAt = new Date(Date.now() + 5 * 60 * 1000),
+  saleId = randomUUID(),
 ): Promise<string> => {
   const product = await getDatabase()('products')
     .select<{ id: number }>('id')
@@ -146,7 +151,6 @@ const createSale = async (
     throw new Error('Fixture product is missing');
   }
 
-  const saleId = randomUUID();
   await getDatabase()('sales').insert({
     sale_id: saleId,
     product_id: product.id,
@@ -413,7 +417,6 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-005 Payment', () 
     const saleId = await createSale();
     const firstLocked = createDeferred();
     const releaseFirst = createDeferred();
-    const secondProcessing = createDeferred();
     const firstApp = createLiveApp(
       new PaymentService(getDatabase(), {
         afterSaleLocked: async () => {
@@ -422,14 +425,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-005 Payment', () 
         },
       }),
     );
-    const secondApp = createLiveApp(
-      new PaymentService(getDatabase(), {
-        afterProcessingInserted: () => {
-          secondProcessing.resolve();
-          return Promise.resolve();
-        },
-      }),
-    );
+    const secondApp = createLiveApp();
     const firstResponse = request(firstApp)
       .post(`/api/v1/sales/${saleId}/payment`)
       .set('Idempotency-Key', `${TEST_KEY_PREFIX}race-a`)
@@ -441,7 +437,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-005 Payment', () 
       .set('Idempotency-Key', `${TEST_KEY_PREFIX}race-b`)
       .send({ payment_method: 'CASH', amount_received: 80 })
       .then((response) => response);
-    await secondProcessing.promise;
+    await waitForSaleRowLockWait(getDatabase(), saleId);
     releaseFirst.resolve();
     const responses = await Promise.all([firstResponse, secondResponse]);
 
@@ -459,7 +455,6 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-005 Payment', () 
     const key = `${TEST_KEY_PREFIX}same-key-race`;
     const firstLocked = createDeferred();
     const releaseFirst = createDeferred();
-    const secondApproachingLock = createDeferred();
     const firstApp = createLiveApp(
       new PaymentService(getDatabase(), {
         afterSaleLocked: async () => {
@@ -468,14 +463,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-005 Payment', () 
         },
       }),
     );
-    const secondApp = createLiveApp(
-      new PaymentService(getDatabase(), {
-        beforeAdvisoryLock: () => {
-          secondApproachingLock.resolve();
-          return Promise.resolve();
-        },
-      }),
-    );
+    const secondApp = createLiveApp();
     const firstResponse = request(firstApp)
       .post(`/api/v1/sales/${saleId}/payment`)
       .set('Idempotency-Key', key)
@@ -488,7 +476,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-005 Payment', () 
       .set('Idempotency-Key', key)
       .send({ payment_method: 'CASH', amount_received: 80 })
       .then((response) => response);
-    await secondApproachingLock.promise;
+    await waitForAdvisoryLockWait(getDatabase(), key);
     releaseFirst.resolve();
 
     const [first, second] = await Promise.all([firstResponse, secondResponse]);
@@ -558,6 +546,27 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-005 Payment', () 
     expect(
       (crossOperation.body as unknown as ErrorResponse).error.code,
     ).toBe('IDEMPOTENCY_CONFLICT');
+  });
+
+  it('treats UUID letter casing as the same logical Payment request', async () => {
+    const saleId = await createSale(
+      'PENDING',
+      new Date(Date.now() + 5 * 60 * 1000),
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    );
+    const key = `${TEST_KEY_PREFIX}uuid-case-replay`;
+    const first = await request(createLiveApp())
+      .post(`/api/v1/sales/${saleId}/payment`)
+      .set('Idempotency-Key', key)
+      .send({ payment_method: 'CASH', amount_received: 80 })
+      .expect(201);
+    const replay = await request(createLiveApp())
+      .post(`/api/v1/sales/${saleId.toUpperCase()}/payment`)
+      .set('Idempotency-Key', key)
+      .send({ payment_method: 'CASH', amount_received: 80 })
+      .expect(200);
+
+    expect(replay.body).toEqual(first.body);
   });
 
   it('rolls back payment and sale update failures before persisting FAILED separately', async () => {
@@ -671,5 +680,50 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-005 Payment', () 
     expect((thirdRetry.body as unknown as ErrorResponse).error.code).toBe(
       'IDEMPOTENCY_FAILED',
     );
+  });
+
+  it('persists FAILED when a non-idempotency unique constraint rejects the Payment', async () => {
+    const duplicatePaymentId = '99999999-9999-4999-8999-999999999999';
+    const firstSaleId = await createSale();
+    await new PaymentService(getDatabase(), {
+      generatePaymentId: () => duplicatePaymentId,
+    }).execute({
+      saleId: firstSaleId,
+      paymentMethod: 'CASH',
+      amountReceived: 80,
+      idempotencyKey: `${TEST_KEY_PREFIX}duplicate-payment-source`,
+    });
+    const secondSaleId = await createSale();
+    const failedKey = `${TEST_KEY_PREFIX}duplicate-payment-target`;
+
+    await expect(
+      new PaymentService(getDatabase(), {
+        generatePaymentId: () => duplicatePaymentId,
+      }).execute({
+        saleId: secondSaleId,
+        paymentMethod: 'CASH',
+        amountReceived: 80,
+        idempotencyKey: failedKey,
+      }),
+    ).rejects.toBeDefined();
+
+    await expect(
+      getDatabase()<IdempotencyRow>('idempotency_keys')
+        .select('status')
+        .where('key', failedKey)
+        .first(),
+    ).resolves.toEqual({ status: 'FAILED' });
+
+    await expect(
+      new PaymentService(getDatabase()).execute({
+        saleId: secondSaleId,
+        paymentMethod: 'CASH',
+        amountReceived: 80,
+        idempotencyKey: failedKey,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'IDEMPOTENCY_FAILED',
+    });
   });
 });

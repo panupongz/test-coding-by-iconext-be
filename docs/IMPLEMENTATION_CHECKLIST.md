@@ -1,6 +1,6 @@
 # Backend implementation checklist
 
-สถานะเอกสาร: **T-001 DONE; T-002 DONE; T-003 DONE; T-004 DONE; T-005 DONE; T-006 DONE; T-007 DONE — Final Gate ผ่านหลัง SRG01 PASS และ audit completion**
+สถานะเอกสาร: **T-001 DONE; T-002 DONE; T-003 DONE; T-004 DONE; T-005 DONE; T-006 DONE; T-007 DONE; T-008 DONE — Final Gate ผ่านหลัง SRG01 PASS และ audit completion**
 
 ## Source of Truth และวิธีอ่าน
 
@@ -616,7 +616,7 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 ## T-008 Transaction + FK + Unique Index
 
-**Current Status:** TODO
+**Current Status:** DONE
 
 **Objective:** บังคับ business atomicity, row locking และ database integrity สำหรับ critical write flows
 
@@ -624,32 +624,47 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 **Sub-tasks:**
 
-- [ ] ทุก business write ใช้ transaction และ MySQL default isolation level
-- [ ] ใช้ FK และ unique indexes สำหรับ Product code, Idempotency key และ Payment Sale ID
-- [ ] successful Sale/Payment/Cancel/expiry และ success idempotency record commit atomically
-- [ ] failed operation rollback business transaction แล้วใช้ transaction แยก persist `FAILED`
-- [ ] สร้าง deterministic canonical request fingerprint/hash สำหรับเปรียบเทียบ same key + same/different request โดยไม่เก็บ full response body
-- [ ] concurrent same key/same request รอ final result; same key/different requestหรือ failed retryตอบ `409`
-- [ ] lock Sale ใน Paymentด้วย row-level lock เช่น `SELECT ... FOR UPDATE`; keep transactionสั้น; unique constraintเป็นชั้นป้องกันสุดท้าย
+- [x] ทุก business write ใช้ transaction และ MySQL default isolation level
+- [x] ใช้ FK และ unique indexes สำหรับ Product code, Idempotency key และ Payment Sale ID
+- [x] successful Sale/Payment/Cancel/expiry และ success idempotency record commit atomically
+- [x] failed operation rollback business transaction แล้วใช้ transaction แยก persist `FAILED`
+- [x] สร้าง deterministic canonical request fingerprint/hash สำหรับเปรียบเทียบ same key + same/different request โดยไม่เก็บ full response body
+- [x] concurrent same key/same request รอ final result; same key/different requestหรือ failed retryตอบ `409`
+- [x] lock Sale ใน Paymentด้วย row-level lock เช่น `SELECT ... FOR UPDATE`; keep transactionสั้น; unique constraintเป็นชั้นป้องกันสุดท้าย
 
 **Acceptance Criteria:** transaction/constraints บังคับทุกกฎ; ไม่มี partial business writes; failed keyถูกบันทึกแยก; concurrency ไม่สร้าง Sale/Payment ซ้ำ
 
 **Required Tests:**
 
-- TC-008.1: error ระหว่าง business transaction → writes ทั้งชุด rollback
-- TC-008.2: หลัง rollback → มี idempotency `FAILED` จาก transaction แยก; retry → `409`
-- TC-008.3: FK/unique constraints ปฏิเสธ orphan/duplicate
-- TC-008.4: concurrent same key/same request สำหรับ Create/Payment/Cancel → แต่ละกรณี execute operationเดียวและผู้รอได้ final result; same key/different request → `409`
-- TC-008.5: concurrent Payment คนละ keyบน Sale เดียว → Payment row เดียว
+- [x] TC-008.1: error ระหว่าง business transaction → writes ทั้งชุด rollback
+- [x] TC-008.2: หลัง rollback → มี idempotency `FAILED` จาก transaction แยก; retry → `409`
+- [x] TC-008.3: FK/unique constraints ปฏิเสธ orphan/duplicate
+- [x] TC-008.4: concurrent same key/same request สำหรับ Create/Payment/Cancel → แต่ละกรณี execute operationเดียวและผู้รอได้ final result; same key/different request → `409`
+- [x] TC-008.5: concurrent Payment คนละ keyบน Sale เดียว → Payment row เดียว
+
+**Implementation evidence (2026-09-17):**
+
+- รวม canonical SHA-256 request identityไว้ที่ shared application helper; sort logical field namesแบบ deterministic และรวม operation type โดยไม่ persist full HTTP response
+- Concurrency testsใช้ bounded `SHOW FULL PROCESSLIST` state pollingและปล่อย operationแรกต่อเมื่อ MySQLแสดง same-key `User lock` waitหรือ active `SELECT ... FOR UPDATE` ของ Saleเดียวกัน จึงพิสูจน์ real overlapโดยไม่พึ่ง arbitrary sleep
+- เพิ่ม failure injectionหลัง Sale insertและหลัง successful idempotency write; ยืนยัน Sale/idempotency success rollbackทั้งชุด, `FAILED` commitใน transactionแยก และ retryตอบ `409`
+- Schema testsยืนยัน sessionใช้ configured MySQL default isolation, required FK/unique indexesปฏิเสธ orphan/duplicate และ `payments.sale_id UNIQUE`ยังเป็น final guard
+- Independent SRG01 พบ `SRG01-T008-001` (MAJOR): non-idempotency `ER_DUP_ENTRY` bypass `FAILED`; แก้ให้ replayเฉพาะเมื่ออ่าน keyเดิมได้ มิฉะนั้น persist `FAILED` แยกและ rethrow พร้อม regressionของ Sale/Payment ID collisionและ retry `409`
+- Independent SRG01 พบ `SRG01-T008-002` (MAJOR): pre-query barriersไม่พิสูจน์ actual lock wait; แก้เป็น database-observed advisory/Sale-row waitsและลบ hooksที่ไม่จำเป็น
+- Independent SRG01 พบ `SRG01-T008-003` (MAJOR): UUID casingทำให้ Payment/Cancel logical requestเดียวกันได้ fingerprintต่างกัน; แก้ canonical `sale_id`เป็น lowercaseและเพิ่ม HTTP replay regressions
+- Post-fix SRG01 re-review: PASS — findingsทั้งสาม `VERIFIED FIXED`; unresolved BLOCKER/HIGH/MEDIUM/MAJOR/MINOR = 0
+- Final focused live MySQL 8.4 T-008 suiteผ่าน 56/56 tests; disposable MySQL 8.4 full regressionผ่าน 135/135; host regressionผ่าน 77 testsและ 58 database-context guarded skips; unit suite 48/48
+- Typecheck, lint, build และ `git diff --check`ผ่าน
+- Transaction designอัปเดตใน README; promptและผลจริงบันทึกใน `docs/prompts/T-008-db-integrity.md`
+- Final Gate: PASS — acceptance criteria, TC-008.1–TC-008.5, T-001–T-007 regressions, SRG01, documentationและ AUD01ผ่านครบ; T-008ปิดเป็น `DONE`
 
 **Definition of Done:**
 
-- [ ] Sub-tasksและ Acceptance Criteria ของ T-008 ผ่าน
-- [ ] Transaction/data-access codeผ่าน strict TypeScript/typecheckและ lint
-- [ ] TC-008.1–TC-008.5 รวม deterministic concurrency testsผ่าน
-- [ ] SRG01 ตรวจ boundaries/locks/constraints/idempotencyและไม่มี unresolved HIGH/MEDIUM findings
-- [ ] Transaction design documentationและ checklistอัปเดต
-- [ ] Prompt audit trail updated
+- [x] Sub-tasksและ Acceptance Criteria ของ T-008 ผ่าน
+- [x] Transaction/data-access codeผ่าน strict TypeScript/typecheckและ lint
+- [x] TC-008.1–TC-008.5 รวม deterministic concurrency testsผ่าน
+- [x] SRG01 ตรวจ boundaries/locks/constraints/idempotencyและไม่มี unresolved HIGH/MEDIUM findings
+- [x] Transaction design documentationและ checklistอัปเดต
+- [x] Prompt audit trail updated
 
 ## T-009 Unit / Integration Tests
 

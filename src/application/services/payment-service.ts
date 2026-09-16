@@ -21,6 +21,7 @@ import {
   type PaymentView,
 } from '../../domain/payment.js';
 import { SALE_STATUS } from '../../domain/sale.js';
+import { createRequestFingerprint } from '../request-fingerprint.js';
 
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
@@ -63,8 +64,6 @@ export interface PaymentServiceOptions {
   readonly generatePaymentId?: () => string;
   readonly saleRepository?: SaleRepository;
   readonly idempotencyRepository?: IdempotencyRepository;
-  readonly beforeAdvisoryLock?: () => Promise<void>;
-  readonly afterProcessingInserted?: () => Promise<void>;
   readonly afterSaleLocked?: () => Promise<void>;
   readonly failAfterPaymentInsert?: boolean;
   readonly failAfterSaleUpdate?: boolean;
@@ -72,16 +71,11 @@ export interface PaymentServiceOptions {
 }
 
 const createFingerprint = (command: PaymentCommand): string =>
-  createHash('sha256')
-    .update(
-      JSON.stringify({
-        operation: IDEMPOTENCY_OPERATION.payment,
-        sale_id: command.saleId,
-        payment_method: command.paymentMethod,
-        amount_received: command.amountReceived,
-      }),
-    )
-    .digest('hex');
+  createRequestFingerprint(IDEMPOTENCY_OPERATION.payment, {
+    sale_id: command.saleId.toLowerCase(),
+    payment_method: command.paymentMethod,
+    amount_received: command.amountReceived,
+  });
 
 const isDuplicateEntryError = (error: unknown): boolean =>
   typeof error === 'object' &&
@@ -93,8 +87,6 @@ export class PaymentService {
   private readonly generatePaymentId: () => string;
   private readonly saleRepository: SaleRepository;
   private readonly idempotencyRepository: IdempotencyRepository;
-  private readonly beforeAdvisoryLock: () => Promise<void>;
-  private readonly afterProcessingInserted: () => Promise<void>;
   private readonly afterSaleLocked: () => Promise<void>;
   private readonly failAfterPaymentInsert: boolean;
   private readonly failAfterSaleUpdate: boolean;
@@ -109,10 +101,6 @@ export class PaymentService {
     this.saleRepository = options.saleRepository ?? new SaleRepository();
     this.idempotencyRepository =
       options.idempotencyRepository ?? new IdempotencyRepository();
-    this.beforeAdvisoryLock =
-      options.beforeAdvisoryLock ?? (() => Promise.resolve());
-    this.afterProcessingInserted =
-      options.afterProcessingInserted ?? (() => Promise.resolve());
     this.afterSaleLocked = options.afterSaleLocked ?? (() => Promise.resolve());
     this.failAfterPaymentInsert = options.failAfterPaymentInsert ?? false;
     this.failAfterSaleUpdate = options.failAfterSaleUpdate ?? false;
@@ -130,7 +118,6 @@ export class PaymentService {
     const connection = await poolClient.acquireConnection();
 
     try {
-      await this.beforeAdvisoryLock();
       const lockResult = (await this.database
         .raw('SELECT GET_LOCK(?, ?) AS acquired', [
           lockName,
@@ -173,8 +160,6 @@ export class PaymentService {
           requestFingerprint,
           IDEMPOTENCY_OPERATION.payment,
         );
-        await this.afterProcessingInserted();
-
         const sale = await this.saleRepository.findByIdForUpdate(
           transaction,
           command.saleId,
@@ -275,7 +260,14 @@ export class PaymentService {
       };
     } catch (error: unknown) {
       if (isDuplicateEntryError(error)) {
-        return this.resolveExisting(command.idempotencyKey, requestFingerprint);
+        const existingRecord = await this.idempotencyRepository.find(
+          this.database,
+          command.idempotencyKey,
+        );
+
+        if (existingRecord !== undefined) {
+          return this.resolveExisting(existingRecord, requestFingerprint);
+        }
       }
 
       await this.rememberFailure(
@@ -310,15 +302,9 @@ export class PaymentService {
   }
 
   private async resolveExisting(
-    key: string,
+    record: IdempotencyRecord,
     requestFingerprint: string,
   ): Promise<PaymentResult> {
-    const record = await this.idempotencyRepository.find(this.database, key);
-
-    if (record === undefined) {
-      throw new Error('Duplicate idempotency key was not readable after conflict');
-    }
-
     this.assertSameRequest(record, requestFingerprint);
 
     if (record.status === IDEMPOTENCY_STATUS.failed) {

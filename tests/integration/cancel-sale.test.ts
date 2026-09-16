@@ -11,6 +11,10 @@ import { createApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config/environment.js';
 import { createDatabase, type Database } from '../../src/database/connection.js';
 import { createLogger } from '../../src/infrastructure/logger.js';
+import {
+  waitForAdvisoryLockWait,
+  waitForSaleRowLockWait,
+} from '../support/database-lock-wait.js';
 import { isDisposableDatabaseTestContext } from '../support/database-test-context.js';
 
 const REQUIRED_DATABASE_ENVIRONMENT_VARIABLES = [
@@ -122,6 +126,7 @@ const cleanupTestRecords = async (): Promise<void> => {
 const createSale = async (
   status = 'PENDING',
   expiresAt = new Date(Date.now() + 5 * 60 * 1000),
+  saleId = randomUUID(),
 ): Promise<string> => {
   const product = await getDatabase()('products')
     .select<{ id: number }>('id')
@@ -132,7 +137,6 @@ const createSale = async (
     throw new Error('Fixture product is missing');
   }
 
-  const saleId = randomUUID();
   await getDatabase()('sales').insert({
     sale_id: saleId,
     product_id: product.id,
@@ -348,12 +352,30 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)(
       );
     });
 
+    it('treats UUID letter casing as the same logical Cancel request', async () => {
+      const saleId = await createSale(
+        'PENDING',
+        new Date(Date.now() + 5 * 60 * 1000),
+        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      );
+      const key = `${TEST_KEY_PREFIX}uuid-case-replay`;
+      const first = await request(createLiveApp())
+        .post(`/api/v1/sales/${saleId}/cancel`)
+        .set('Idempotency-Key', key)
+        .expect(200);
+      const replay = await request(createLiveApp())
+        .post(`/api/v1/sales/${saleId.toUpperCase()}/cancel`)
+        .set('Idempotency-Key', key)
+        .expect(200);
+
+      expect(replay.body).toEqual(first.body);
+    });
+
     it('serializes overlapping same-key cancellation to one successful record', async () => {
       const saleId = await createSale();
       const key = `${TEST_KEY_PREFIX}concurrent-key`;
       const firstLocked = createDeferred();
       const releaseFirst = createDeferred();
-      const secondApproachingLock = createDeferred();
       const firstApp = createLiveApp(
         new CancelSaleService(getDatabase(), {
           afterSaleLocked: async () => {
@@ -362,14 +384,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)(
           },
         }),
       );
-      const secondApp = createLiveApp(
-        new CancelSaleService(getDatabase(), {
-          beforeAdvisoryLock: () => {
-            secondApproachingLock.resolve();
-            return Promise.resolve();
-          },
-        }),
-      );
+      const secondApp = createLiveApp();
       const firstResponse = request(firstApp)
         .post(`/api/v1/sales/${saleId}/cancel`)
         .set('Idempotency-Key', key)
@@ -379,7 +394,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)(
         .post(`/api/v1/sales/${saleId}/cancel`)
         .set('Idempotency-Key', key)
         .then((response) => response);
-      await secondApproachingLock.promise;
+      await waitForAdvisoryLockWait(getDatabase(), key);
       releaseFirst.resolve();
       const [first, second] = await Promise.all([
         firstResponse,
@@ -400,7 +415,6 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)(
       const saleId = await createSale();
       const cancelLocked = createDeferred();
       const releaseCancel = createDeferred();
-      const paymentProcessing = createDeferred();
       const cancelApp = createLiveApp(
         new CancelSaleService(getDatabase(), {
           afterSaleLocked: async () => {
@@ -409,15 +423,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)(
           },
         }),
       );
-      const paymentApp = createLiveApp(
-        new CancelSaleService(getDatabase()),
-        new PaymentService(getDatabase(), {
-          afterProcessingInserted: () => {
-            paymentProcessing.resolve();
-            return Promise.resolve();
-          },
-        }),
-      );
+      const paymentApp = createLiveApp();
       const cancelResponse = request(cancelApp)
         .post(`/api/v1/sales/${saleId}/cancel`)
         .set('Idempotency-Key', `${TEST_KEY_PREFIX}race-cancel-first`)
@@ -428,7 +434,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)(
         .set('Idempotency-Key', `${TEST_KEY_PREFIX}race-payment-second`)
         .send({ payment_method: 'CASH', amount_received: 70 })
         .then((response) => response);
-      await paymentProcessing.promise;
+      await waitForSaleRowLockWait(getDatabase(), saleId);
       releaseCancel.resolve();
       const [cancel, payment] = await Promise.all([
         cancelResponse,
@@ -457,7 +463,6 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)(
       const saleId = await createSale();
       const paymentLocked = createDeferred();
       const releasePayment = createDeferred();
-      const cancelProcessing = createDeferred();
       const paymentApp = createLiveApp(
         new CancelSaleService(getDatabase()),
         new PaymentService(getDatabase(), {
@@ -467,14 +472,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)(
           },
         }),
       );
-      const cancelApp = createLiveApp(
-        new CancelSaleService(getDatabase(), {
-          afterProcessingInserted: () => {
-            cancelProcessing.resolve();
-            return Promise.resolve();
-          },
-        }),
-      );
+      const cancelApp = createLiveApp();
       const paymentResponse = request(paymentApp)
         .post(`/api/v1/sales/${saleId}/payment`)
         .set('Idempotency-Key', `${TEST_KEY_PREFIX}race-payment-first`)
@@ -485,7 +483,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)(
         .post(`/api/v1/sales/${saleId}/cancel`)
         .set('Idempotency-Key', `${TEST_KEY_PREFIX}race-cancel-second`)
         .then((response) => response);
-      await cancelProcessing.promise;
+      await waitForSaleRowLockWait(getDatabase(), saleId);
       releasePayment.resolve();
       const [payment, cancel] = await Promise.all([
         paymentResponse,
@@ -517,7 +515,6 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)(
       );
       const paymentLocked = createDeferred();
       const releasePayment = createDeferred();
-      const cancelProcessing = createDeferred();
       const paymentApp = createLiveApp(
         new CancelSaleService(getDatabase()),
         new PaymentService(getDatabase(), {
@@ -527,14 +524,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)(
           },
         }),
       );
-      const cancelApp = createLiveApp(
-        new CancelSaleService(getDatabase(), {
-          afterProcessingInserted: () => {
-            cancelProcessing.resolve();
-            return Promise.resolve();
-          },
-        }),
-      );
+      const cancelApp = createLiveApp();
       const paymentResponse = request(paymentApp)
         .post(`/api/v1/sales/${saleId}/payment`)
         .set('Idempotency-Key', `${TEST_KEY_PREFIX}expired-race-payment`)
@@ -545,7 +535,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)(
         .post(`/api/v1/sales/${saleId}/cancel`)
         .set('Idempotency-Key', `${TEST_KEY_PREFIX}expired-race-cancel`)
         .then((response) => response);
-      await cancelProcessing.promise;
+      await waitForSaleRowLockWait(getDatabase(), saleId);
       releasePayment.resolve();
       const [payment, cancel] = await Promise.all([
         paymentResponse,
