@@ -1,6 +1,6 @@
 # test-coding-by-iconext-be
 
-Node.js, TypeScript, Express, and MySQL backend for the ICONEXT coding exercise. The Create Sale action is implemented; Payment and Cancel remain placeholders for their owning tasks.
+Node.js, TypeScript, Express, and MySQL backend for the ICONEXT coding exercise. The Create Sale and Payment actions are implemented; Cancel remains a placeholder for its owning task.
 
 ## Prerequisites
 
@@ -89,11 +89,24 @@ Content-Type: application/json
 
 A first success returns `201`; a successful retry with the same key and request returns the current Sale with `200`. The body contains only `sale_id`, `product_code`, `name`, `unit_price`, `quantity`, `total`, `status`, `created_at`, and `expires_at`. New Sales use `PENDING`, quantity `1`, the Product price captured at creation, and a five-minute expiry. A key used for a different request or an operation previously recorded as failed returns `409`.
 
-The following registered actions still return `501 Not Implemented` until their owning tasks add approved behavior:
+Payment is available:
 
-- `POST /api/v1/sales/:sale_id/payment`
+```http
+POST /api/v1/sales/:sale_id/payment
+Idempotency-Key: client-generated-payment-key
+Content-Type: application/json
+
+{"payment_method":"CASH","amount_received":100}
+```
+
+Payment accepts only `CASH` and `QR_PAYMENT`. `amount_received` must be a positive integer THB number. CASH must be at least the Sale total and returns `change`; QR payment must equal the Sale total and never returns `change`. A first successful Payment returns `201` with only `payment_id`, `payment_method`, `amount_received`, `paid_at`, and the CASH-only `change` field. A successful retry with the same key and request returns the existing Payment with `200`.
+
+Payment locks the Sale and writes Payment plus `PENDING` to `PAID` atomically. Expired `PENDING` Sales are persisted as `CANCELLED`, do not create a Payment, and return `200` with only `sale_id` and `status`. Concurrent Payments can create at most one Payment row for a Sale; unrelated `PAID` or `CANCELLED` Sales return `409`.
+
+The following registered action still returns `501 Not Implemented` until its owning task adds approved behavior:
+
 - `POST /api/v1/sales/:sale_id/cancel`
 
 There are no GET, DELETE, Product CRUD, login, role, or stock routes. Container health uses a TCP check rather than adding an unapproved HTTP route.
 
-Create Sale follows route → controller → service → repository → MySQL. Its controller owns strict HTTP validation, while its service owns idempotency and transaction orchestration. Payment and Cancel still use the T-001 placeholder controller.
+Create Sale and Payment follow route → controller → service → repository → MySQL. Controllers own strict HTTP validation, while services own idempotency, state, locking, and transaction orchestration. Cancel still uses the T-001 placeholder controller.

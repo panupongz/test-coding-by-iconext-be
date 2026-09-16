@@ -1,5 +1,6 @@
 import type { Knex } from 'knex';
 
+import type { PaymentMethod, PaymentView } from '../../domain/payment.js';
 import type { SaleStatus, SaleView } from '../../domain/sale.js';
 
 export interface ProductForSale {
@@ -27,6 +28,22 @@ interface SaleViewRow {
   readonly expires_at: Date;
 }
 
+interface LockedSaleRow {
+  readonly sale_id: string;
+  readonly unit_price: number;
+  readonly quantity: number;
+  readonly status: SaleStatus;
+  readonly expires_at: Date;
+}
+
+interface PaymentViewRow {
+  readonly payment_id: string;
+  readonly payment_method: PaymentMethod;
+  readonly amount_received: number;
+  readonly change: number | null;
+  readonly paid_at: Date;
+}
+
 export interface NewSaleRecord {
   readonly saleId: string;
   readonly productId: number;
@@ -35,6 +52,23 @@ export interface NewSaleRecord {
   readonly status: SaleStatus;
   readonly createdAt: Date;
   readonly expiresAt: Date;
+}
+
+export interface LockedSale {
+  readonly saleId: string;
+  readonly unitPrice: number;
+  readonly quantity: number;
+  readonly status: SaleStatus;
+  readonly expiresAt: Date;
+}
+
+export interface NewPaymentRecord {
+  readonly paymentId: string;
+  readonly saleId: string;
+  readonly paymentMethod: PaymentMethod;
+  readonly amountReceived: number;
+  readonly change: number | null;
+  readonly paidAt: Date;
 }
 
 export class SaleRepository {
@@ -107,6 +141,91 @@ export class SaleRepository {
       status: sale.status,
       createdAt: sale.created_at,
       expiresAt: sale.expires_at,
+    };
+  }
+
+  public async findByIdForUpdate(
+    transaction: Knex.Transaction,
+    saleId: string,
+  ): Promise<LockedSale | undefined> {
+    const sale = await transaction<LockedSaleRow>('sales')
+      .select('sale_id', 'unit_price', 'quantity', 'status', 'expires_at')
+      .where({ sale_id: saleId })
+      .forUpdate()
+      .first();
+
+    if (sale === undefined) {
+      return undefined;
+    }
+
+    return {
+      saleId: sale.sale_id,
+      unitPrice: sale.unit_price,
+      quantity: sale.quantity,
+      status: sale.status,
+      expiresAt: sale.expires_at,
+    };
+  }
+
+  public async markPaid(
+    transaction: Knex.Transaction,
+    saleId: string,
+  ): Promise<void> {
+    const updatedRows = await transaction('sales')
+      .where({ sale_id: saleId, status: 'PENDING' })
+      .update({ status: 'PAID' });
+
+    if (updatedRows !== 1) {
+      throw new Error('Expected one pending sale to be marked paid');
+    }
+  }
+
+  public async markCancelled(
+    transaction: Knex.Transaction,
+    saleId: string,
+  ): Promise<void> {
+    const updatedRows = await transaction('sales')
+      .where({ sale_id: saleId, status: 'PENDING' })
+      .update({ status: 'CANCELLED' });
+
+    if (updatedRows !== 1) {
+      throw new Error('Expected one pending sale to be marked cancelled');
+    }
+  }
+
+  public async insertPayment(
+    transaction: Knex.Transaction,
+    payment: NewPaymentRecord,
+  ): Promise<void> {
+    await transaction('payments').insert({
+      payment_id: payment.paymentId,
+      sale_id: payment.saleId,
+      payment_method: payment.paymentMethod,
+      amount_received: payment.amountReceived,
+      change: payment.change,
+      paid_at: payment.paidAt,
+    });
+  }
+
+  public async findPaymentView(
+    connection: Knex | Knex.Transaction,
+    paymentId: string,
+  ): Promise<PaymentView | undefined> {
+    const payment = await connection<PaymentViewRow>('payments')
+      .select('payment_id', 'payment_method', 'amount_received', 'change', 'paid_at')
+      .where({ payment_id: paymentId })
+      .first();
+
+    if (payment === undefined) {
+      return undefined;
+    }
+
+    return {
+      paymentId: payment.payment_id,
+      paymentMethod: payment.payment_method,
+      amountReceived: payment.amount_received,
+      change: payment.change,
+      paidAt: payment.paid_at,
     };
   }
 }

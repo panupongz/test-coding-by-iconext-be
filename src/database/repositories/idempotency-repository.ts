@@ -2,6 +2,7 @@ import type { Knex } from 'knex';
 
 export const IDEMPOTENCY_OPERATION = {
   createSale: 'CREATE_SALE',
+  payment: 'PAYMENT',
 } as const;
 
 export const IDEMPOTENCY_STATUS = {
@@ -19,6 +20,7 @@ interface IdempotencyRow {
   readonly operation_type: string;
   readonly status: IdempotencyStatus;
   readonly sale_id: string | null;
+  readonly payment_id: string | null;
 }
 
 export interface IdempotencyRecord {
@@ -27,6 +29,7 @@ export interface IdempotencyRecord {
   readonly operationType: string;
   readonly status: IdempotencyStatus;
   readonly saleId: string | null;
+  readonly paymentId: string | null;
 }
 
 export class IdempotencyRepository {
@@ -34,11 +37,12 @@ export class IdempotencyRepository {
     transaction: Knex.Transaction,
     key: string,
     requestFingerprint: string,
+    operationType: string = IDEMPOTENCY_OPERATION.createSale,
   ): Promise<void> {
     await transaction('idempotency_keys').insert({
       key,
       request_fingerprint: requestFingerprint,
-      operation_type: IDEMPOTENCY_OPERATION.createSale,
+      operation_type: operationType,
       status: IDEMPOTENCY_STATUS.processing,
     });
   }
@@ -61,12 +65,37 @@ export class IdempotencyRepository {
     }
   }
 
+  public async markPaymentSucceeded(
+    transaction: Knex.Transaction,
+    key: string,
+    paymentId: string,
+  ): Promise<void> {
+    const updatedRows = await transaction('idempotency_keys')
+      .where({ key, status: IDEMPOTENCY_STATUS.processing })
+      .update({
+        status: IDEMPOTENCY_STATUS.succeeded,
+        payment_id: paymentId,
+        updated_at: transaction.fn.now(3),
+      });
+
+    if (updatedRows !== 1) {
+      throw new Error('Expected one processing idempotency record');
+    }
+  }
+
   public async find(
     connection: Knex | Knex.Transaction,
     key: string,
   ): Promise<IdempotencyRecord | undefined> {
     const record = await connection<IdempotencyRow>('idempotency_keys')
-      .select('key', 'request_fingerprint', 'operation_type', 'status', 'sale_id')
+      .select(
+        'key',
+        'request_fingerprint',
+        'operation_type',
+        'status',
+        'sale_id',
+        'payment_id',
+      )
       .where({ key })
       .first();
 
@@ -80,6 +109,7 @@ export class IdempotencyRepository {
       operationType: record.operation_type,
       status: record.status,
       saleId: record.sale_id,
+      paymentId: record.payment_id,
     };
   }
 
@@ -87,11 +117,12 @@ export class IdempotencyRepository {
     transaction: Knex.Transaction,
     key: string,
     requestFingerprint: string,
+    operationType: string = IDEMPOTENCY_OPERATION.createSale,
   ): Promise<void> {
     await transaction('idempotency_keys').insert({
       key,
       request_fingerprint: requestFingerprint,
-      operation_type: IDEMPOTENCY_OPERATION.createSale,
+      operation_type: operationType,
       status: IDEMPOTENCY_STATUS.failed,
     });
   }

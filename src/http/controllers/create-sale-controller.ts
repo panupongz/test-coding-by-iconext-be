@@ -9,11 +9,11 @@ import type {
   CreateSaleCommand,
   CreateSaleResult,
 } from '../../application/services/create-sale-service.js';
+import { readIdempotencyKey } from '../validation/idempotency-key.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_CREATED = 201;
 const HTTP_OK = 200;
-const MAXIMUM_IDEMPOTENCY_KEY_LENGTH = 255;
 
 const productCodeSchema = z.string().regex(/^P\d{3}$/);
 const createSaleBodySchema = z
@@ -21,26 +21,6 @@ const createSaleBodySchema = z
     product_code: z.string(),
   })
   .strict();
-
-const readIdempotencyKey = (headerValue: string | undefined): string => {
-  if (headerValue === undefined || headerValue.trim().length === 0) {
-    throw new ApplicationError(
-      HTTP_BAD_REQUEST,
-      ERROR_CODES.idempotencyKeyRequired,
-      'กรุณาระบุ Idempotency-Key',
-    );
-  }
-
-  if (headerValue.length > MAXIMUM_IDEMPOTENCY_KEY_LENGTH) {
-    throw new ApplicationError(
-      HTTP_BAD_REQUEST,
-      ERROR_CODES.idempotencyKeyTooLong,
-      'Idempotency-Key ต้องยาวไม่เกิน 255 ตัวอักษร',
-    );
-  }
-
-  return headerValue;
-};
 
 export interface CreateSaleExecutor {
   execute(command: CreateSaleCommand): Promise<CreateSaleResult>;

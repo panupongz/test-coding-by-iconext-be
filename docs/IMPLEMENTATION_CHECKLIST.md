@@ -1,6 +1,6 @@
 # Backend implementation checklist
 
-สถานะเอกสาร: **T-001 DONE; T-002 DONE; T-003 DONE; T-004 DONE — Final Gate ผ่านหลัง SRG01 PASS และ audit completion**
+สถานะเอกสาร: **T-001 DONE; T-002 DONE; T-003 DONE; T-004 DONE; T-005 DONE — Final Gate ผ่านหลัง SRG01 PASS และ audit completion**
 
 ## Source of Truth และวิธีอ่าน
 
@@ -466,7 +466,7 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 ## T-005 Payment + Concurrency + Idempotency
 
-**Current Status:** TODO
+**Current Status:** DONE
 
 **Objective:** Implement Payment ที่ถูกต้องภายใต้ state, amount, expiry, transaction, idempotency และ concurrent requests
 
@@ -474,13 +474,13 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 **Sub-tasks:**
 
-- [ ] Payment endpoint รับ client key แยกจาก Create Sale และ body เฉพาะ `payment_method`, `amount_received`
-- [ ] amount เป็น positive integer number; CASH ต้องไม่น้อยกว่า totalและบันทึก change; QR ต้องเท่ากับ totalและไม่มี change
-- [ ] invalid UUID หรือ Sale ไม่พบตอบ `404`; unrelated existing `PAID`/`CANCELLED`ตอบ `409`
-- [ ] lock Sale; insert Payment + `PENDING → PAID` ใน transaction เดียว; concurrent Payment มีผู้ชนะหนึ่ง request
-- [ ] ตรวจ expiry ก่อน commit; expired `PENDING` persist `CANCELLED`, ไม่สร้าง Payment, ตอบ `200` body `sale_id` + `status`
-- [ ] success response fields ตาม Q102–Q104; first successตอบ `201` ตาม TECH02
-- [ ] successful retryตอบ `200` + existing Payment; same key/different requestหรือ failed key retryตอบ `409`
+- [x] Payment endpoint รับ client key แยกจาก Create Sale และ body เฉพาะ `payment_method`, `amount_received`
+- [x] amount เป็น positive integer number; CASH ต้องไม่น้อยกว่า totalและบันทึก change; QR ต้องเท่ากับ totalและไม่มี change
+- [x] invalid UUID หรือ Sale ไม่พบตอบ `404`; unrelated existing `PAID`/`CANCELLED`ตอบ `409`
+- [x] lock Sale; insert Payment + `PENDING → PAID` ใน transaction เดียว; concurrent Payment มีผู้ชนะหนึ่ง request
+- [x] ตรวจ expiry ก่อน commit; expired `PENDING` persist `CANCELLED`, ไม่สร้าง Payment, ตอบ `200` body `sale_id` + `status`
+- [x] success response fields ตาม Q102–Q104; first successตอบ `201` ตาม TECH02
+- [x] successful retryตอบ `200` + existing Payment; same key/different requestหรือ failed key retryตอบ `409`
 
 **Acceptance Criteria:** CASH/QR ถูกต้อง; Payment/PAID atomic; expiry persisted; concurrency ได้ Payment สูงสุดหนึ่ง; retry คืน Payment เดิม; initial successตอบ `201` ตาม TECH02
 
@@ -495,14 +495,23 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 - TC-005.7: successful retry → `200`; same key/different requestหรือ failed key retry → `409`
 - TC-005.8: inject failureระหว่าง Payment insert/Sale update/success-idempotency write → Paymentและ Sale state rollbackทั้งชุด; persist `FAILED` แยกและ retry key → `409`
 
+**Implementation evidence:**
+
+- Payment ใช้ Route → Controller → Service → Repository → MySQL พร้อม strict path/header/body validation, fixed error codes และ response field setตาม contract
+- Service ใช้ advisory lockต่อ Idempotency-Key บน pinned connectionก่อน transaction และ `SELECT ... FOR UPDATE` บน Sale; Payment, Sale state และ successful idempotency result commitหรือ rollbackร่วมกัน
+- Expiry ถูกตรวจทั้งตอนรับ requestและหลัง lock Saleก่อน Payment writes; expired `PENDING` persistเป็น `CANCELLED` โดยไม่มี Payment และ replayคืนผลเดิม
+- Live testsใช้ deterministic barriersยืนยัน concurrent different-key requests overlapที่ Sale row, concurrent same-key requests serializeที่ advisory lock, และมี Paymentสำเร็จสูงสุดหนึ่งรายการ
+- Failure injectionหลัง Payment insert, Sale update และ successful idempotency writeยืนยัน full rollback; `FAILED` ถูก persistใน transactionแยกและ retryตอบ `409`
+- Final Gate: typecheck, lint, build, unit/full host suitesผ่าน; disposable MySQL 8.4 suiteผ่าน 85/85; SRG01 ไม่มี unresolved BLOCKER/MAJOR/MINOR findings
+
 **Definition of Done:**
 
-- [ ] Sub-tasksและ Acceptance Criteria ของ T-005 ผ่าน
-- [ ] Strict TypeScript/typecheckและ lintผ่าน; business/locking logicอยู่ใน Service/Repositoryที่เหมาะสม
-- [ ] TC-005.1–TC-005.8 รวม concurrency/rollback integration testsผ่าน
-- [ ] SRG01 ตรวจ money/state/expiry/transaction/idempotency/concurrencyและไม่มี unresolved HIGH/MEDIUM findings
-- [ ] API documentationและ checklistอัปเดต
-- [ ] Prompt audit trail updated
+- [x] Sub-tasksและ Acceptance Criteria ของ T-005 ผ่าน
+- [x] Strict TypeScript/typecheckและ lintผ่าน; business/locking logicอยู่ใน Service/Repositoryที่เหมาะสม
+- [x] TC-005.1–TC-005.8 รวม concurrency/rollback integration testsผ่าน
+- [x] SRG01 ตรวจ money/state/expiry/transaction/idempotency/concurrencyและไม่มี unresolved HIGH/MEDIUM findings
+- [x] API documentationและ checklistอัปเดต
+- [x] Prompt audit trail updated
 
 ## T-006 Cancel + Expiration
 
