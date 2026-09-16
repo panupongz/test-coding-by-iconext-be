@@ -7,6 +7,7 @@ export default defineConfig({
       provider: 'v8',
     },
     environment: 'node',
+    fileParallelism: false,
     include: ['tests/**/*.test.ts'],
     restoreMocks: true,
   },

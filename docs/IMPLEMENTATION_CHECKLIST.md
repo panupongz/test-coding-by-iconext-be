@@ -1,6 +1,6 @@
 # Backend implementation checklist
 
-สถานะเอกสาร: **T-001 DONE; T-002 DONE — Final Gate re-run ผ่านหลังแก้ audit prerequisite; Task ถัดไปคือ T-003 ซึ่งยังไม่ได้เริ่ม**
+สถานะเอกสาร: **T-001 DONE; T-002 DONE; T-003 DONE — Final Gate ผ่านหลัง SRG01 PASS และ audit completion**
 
 ## Source of Truth และวิธีอ่าน
 
@@ -364,7 +364,7 @@ T-004–T-006 ห้ามเริ่มก่อน validation/error และ
 
 ## T-003 Product Seed แบบ Idempotent
 
-**Current Status:** TODO
+**Current Status:** DONE
 
 **Objective:** จัดเตรียม Product master dataห้ารายการแบบ deterministic และ idempotent ภายใน backend container
 
@@ -382,12 +382,12 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 | P004 | Ham Cheese Sandwich | Sandwich with ham and cheese | `/products/P004.jpg` | 75 |
 | P005 | Drinking Water | Bottled drinking water | `/products/P005.jpg` | 15 |
 
-- [ ] สร้าง exactly 5 rows ตามตาราง; ไม่มี Product นอก `P001`–`P005`
-- [ ] ตรวจ code pattern, integer THB และ relative image path
-- [ ] seed ครั้งแรกสร้างข้อมูล; รันซ้ำด้วยข้อมูลเดิมไม่เพิ่ม/เปลี่ยน record
-- [ ] duplicate code หรือ code เดิมแต่ field เปลี่ยนให้ seed fail และไม่แก้ master data
-- [ ] ไม่สร้าง Product create/update/delete API และไม่เพิ่ม ACTIVE/INACTIVE status
-- [ ] expose seed command ที่ execute ภายใน `backend` container และเชื่อมต่อ Compose service `mysql`
+- [x] สร้าง exactly 5 rows ตามตาราง; ไม่มี Product นอก `P001`–`P005`
+- [x] ตรวจ code pattern, integer THB และ relative image path
+- [x] seed ครั้งแรกสร้างข้อมูล; รันซ้ำด้วยข้อมูลเดิมไม่เพิ่ม/เปลี่ยน record
+- [x] duplicate code หรือ code เดิมแต่ field เปลี่ยนให้ seed fail และไม่แก้ master data
+- [x] ไม่สร้าง Product create/update/delete API และไม่เพิ่ม ACTIVE/INACTIVE status
+- [x] expose seed command ที่ execute ภายใน `backend` container และเชื่อมต่อ Compose service `mysql`
 
 **Acceptance Criteria:** seed สร้างห้า Product ตามตารางครบ; rerun ข้อมูลเดิมเป็น no-op; changed/duplicate seed fail; ไม่มี Product management API; seed command run ได้ภายใน backend container
 
@@ -399,14 +399,23 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 - TC-003.4: ทุก price เป็น positive integer THB และ image เป็น `/products/{product_code}.jpg`
 - TC-003.5: run seed command ภายใน backend containerสองครั้ง → ครั้งแรกสร้างห้า rows และครั้งที่สองไม่เปลี่ยนข้อมูล
 
+**Implementation evidence:**
+
+- canonical Product seed อยู่ที่ `src/database/seeds/202609170001_seed_products.ts` และใช้ transaction ตรวจ existing rows ก่อน insert
+- matching canonical rows เป็น no-op; missing canonical rowsถูกเพิ่ม; canonical code ที่ field ใดเปลี่ยนหรือถูก soft-delete ทำให้ seed fail โดยไม่ overwrite
+- live integration tests ครอบคลุม exact dataset, positive integer THB, relative image, rerun idempotency, partial matching data และ conflict rollback
+- disposable live MySQL suite ผ่าน 34/34; backend `db:seed` สองรอบคง rows/IDs เดิม และ intentional P003 conflict fail โดยไม่ overwrite หรือเพิ่ม row
+- Senior Review SRG01: PASS; ไม่มี BLOCKER, MAJOR หรือ MINOR findings
+- Final Gate ผ่าน; T-003 ปิดเป็น DONE โดยไม่เปลี่ยน T-004+ status/functionality
+
 **Definition of Done:**
 
-- [ ] Sub-tasksและ Acceptance Criteria ของ T-003 ผ่าน
-- [ ] Seed codeผ่าน strict TypeScript/typecheckและ lint
-- [ ] TC-003.1–TC-003.5 ผ่าน
-- [ ] SRG01 ไม่มี unresolved HIGH/MEDIUM findings
-- [ ] Seed dataset/command documentationและ checklistอัปเดต
-- [ ] Prompt audit trail updated
+- [x] Sub-tasksและ Acceptance Criteria ของ T-003 ผ่าน
+- [x] Seed codeผ่าน strict TypeScript/typecheckและ lint
+- [x] TC-003.1–TC-003.5 ผ่าน
+- [x] SRG01 ไม่มี unresolved HIGH/MEDIUM findings
+- [x] Seed dataset/command documentationและ checklistอัปเดต
+- [x] Prompt audit trail updated
 
 ## T-004 Create Sale
 

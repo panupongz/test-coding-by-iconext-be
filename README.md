@@ -54,7 +54,7 @@ docker compose exec backend npm run db:migrate
 docker compose exec backend npm run db:seed
 ```
 
-T-003 owns the five-product seed. Until T-003 is implemented, the seed command completes successfully as a no-op.
+The seed command creates the canonical products `P001`–`P005`. Running it again with identical data is a no-op. If an existing canonical product code has different master data, the seed fails instead of overwriting that row.
 
 Live database integration tests require both `NODE_ENV=test` and the explicit `DB_TEST_CONTEXT=disposable` safety flag. Database variables alone are not enough, so ordinary development and production databases skip these tests. Each test runs in a transaction that is rolled back and never deletes pre-existing rows by predictable identifiers.
 
