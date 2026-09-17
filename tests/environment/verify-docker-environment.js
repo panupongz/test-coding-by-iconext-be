@@ -6,6 +6,7 @@ const composeEnvironment = {
   ...process.env,
   NODE_ENV: 'test',
   PORT: String(40_000 + (process.pid % 10_000)),
+  PHPMYADMIN_PORT: String(50_000 + (process.pid % 10_000)),
   LOG_LEVEL: 'silent',
   DB_NAME: 'iconext_t009',
   DB_USER: 'iconext_t009',
@@ -151,8 +152,8 @@ try {
   const serviceNames = Object.keys(config.services ?? {}).sort();
 
   assert(
-    JSON.stringify(serviceNames) === JSON.stringify(['backend', 'mysql']),
-    'Compose must define exactly backend and mysql services',
+    JSON.stringify(serviceNames) === JSON.stringify(['backend', 'mysql', 'phpmyadmin']),
+    'Compose must define exactly backend, mysql, and phpmyadmin services',
   );
   assert(
     config.services.backend.environment.DB_HOST === 'mysql',
@@ -175,6 +176,14 @@ try {
       (volume) => volume.type === 'volume' && volume.target === '/var/lib/mysql',
     ),
     'MySQL data must use a named volume',
+  );
+  assert(
+    config.services.phpmyadmin.environment.PMA_HOST === 'mysql',
+    'phpMyAdmin must connect to the existing mysql service',
+  );
+  assert(
+    config.services.phpmyadmin.depends_on.mysql.condition === 'service_healthy',
+    'phpMyAdmin must depend on MySQL health',
   );
 
   runDocker(['build', 'backend']);

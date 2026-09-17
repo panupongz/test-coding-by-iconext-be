@@ -56,5 +56,18 @@ services:
       - mysql_data:/var/lib/mysql
     restart: unless-stopped
 
+  phpmyadmin:
+    image: phpmyadmin:5.2.2-apache
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+    depends_on:
+      mysql:
+        condition: service_healthy
+        restart: true
+    ports:
+      - "${PHPMYADMIN_PORT:-8080}:80"
+    restart: unless-stopped
+
 volumes:
   mysql_data:

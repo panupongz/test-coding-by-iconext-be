@@ -1,12 +1,14 @@
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import type { Logger } from 'pino';
+import swaggerUi from 'swagger-ui-express';
 
 import type { CreateSaleExecutor } from './http/controllers/create-sale-controller.js';
 import type { CancelSaleExecutor } from './http/controllers/cancel-sale-controller.js';
 import type { PaymentExecutor } from './http/controllers/payment-controller.js';
 import { createErrorHandler, notFoundHandler } from './http/middleware/error-handler.js';
 import { createRequestLogger } from './http/middleware/request-logger.js';
+import { openApiDocument } from './http/openapi.js';
 import { createApiRouter } from './http/routes/api-routes.js';
 
 const JSON_BODY_LIMIT = '100kb';
@@ -20,6 +22,15 @@ export const createApp = (
   const app = express();
 
   app.disable('x-powered-by');
+  app.use(
+    '/api-docs',
+    helmet({ contentSecurityPolicy: false }),
+    swaggerUi.serve,
+    swaggerUi.setup(openApiDocument, {
+      customSiteTitle: 'ICONEXT Sales API',
+      swaggerOptions: { displayRequestDuration: true },
+    }),
+  );
   app.use(helmet());
   app.use(express.json({ limit: JSON_BODY_LIMIT, strict: true }));
   app.use(createRequestLogger(logger));

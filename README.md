@@ -15,7 +15,8 @@ catalog are in [docs/API.md](docs/API.md).
 
 ## Clean-checkout Docker setup
 
-Compose defines exactly two services: `backend` and `mysql`. Create a local
+Compose defines three local-development services: `backend`, `mysql`, and
+`phpmyadmin`. Create a local
 environment file from the committed safe template, then replace both example
 passwords with local-only values. `.env` is ignored by Git and must not be
 committed.
@@ -44,15 +45,20 @@ containers, and only then start the HTTP service:
 docker compose up -d mysql
 docker compose run --rm backend npm run db:migrate
 docker compose run --rm backend npm run db:seed
-docker compose up -d backend
+docker compose up -d backend phpmyadmin
 docker compose ps
 ```
 
 The API is available at `http://localhost:${PORT:-3000}` (port `3000` with the
-provided template). Useful operating commands are:
+provided template). Swagger UI is available at
+`http://localhost:3000/api-docs`, and phpMyAdmin is available at
+`http://localhost:8080` by default. Sign in to phpMyAdmin with `DB_USER` and
+`DB_PASSWORD` from your local `.env`; its MySQL host is `mysql` and the
+database is `iconext_backend`. `PHPMYADMIN_PORT` can change only the host port
+when `8080` is unavailable. Useful operating commands are:
 
 ```sh
-docker compose logs -f backend mysql
+docker compose logs -f backend mysql phpmyadmin
 docker compose restart backend
 docker compose stop
 docker compose start
