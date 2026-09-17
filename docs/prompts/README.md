@@ -27,6 +27,7 @@
 | T-008 | `T-008-db-integrity.md` |
 | T-009 | `T-009-testing.md` |
 | T-010 | `T-010-documentation.md` |
+| T-011 | `T-011-api-dtos.md` |
 
 ## Update sequence
 

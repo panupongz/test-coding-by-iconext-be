@@ -16,8 +16,6 @@ import { SaleRepository } from '../../database/repositories/sale-repository.js';
 import {
   SALE_STATUS,
   isSaleExpiredAt,
-  toSaleResponse,
-  type SaleResponse,
   type SaleView,
 } from '../../domain/sale.js';
 import { createRequestFingerprint } from '../request-fingerprint.js';
@@ -48,7 +46,7 @@ export interface CreateSaleCommand {
 
 export interface CreateSaleResult {
   readonly created: boolean;
-  readonly sale: SaleResponse;
+  readonly sale: SaleView;
 }
 
 export interface CreateSaleServiceOptions {
@@ -197,7 +195,7 @@ export class CreateSaleService {
         } satisfies SaleView;
       }, { connection });
 
-      return { created: true, sale: toSaleResponse(sale) };
+      return { created: true, sale };
     } catch (error: unknown) {
       if (isDuplicateEntryError(error)) {
         const existingRecord = await this.idempotencyRepository.find(
@@ -274,7 +272,7 @@ export class CreateSaleService {
       return currentSale;
     }, { connection });
 
-    return { created: false, sale: toSaleResponse(sale) };
+    return { created: false, sale };
   }
 
   private assertSameRequest(

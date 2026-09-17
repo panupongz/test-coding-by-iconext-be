@@ -805,30 +805,53 @@ If any refactor requires changing behavior approved in T-001–T-010: **STOP and
 
 ## T-011 Separate API Request/Response DTOs
 
-**Current Status:** TODO
+**Current Status:** DONE
 
 **Objective:** Make HTTP request/response contracts explicit and discoverable while preserving the existing external API contract.
 
 **Sub-tasks:**
 
-- [ ] Review request/response contracts for all existing FE-facing endpoints
-- [ ] Introduce an appropriate HTTP DTO structure for request/response contracts where useful
-- [ ] Keep HTTP DTOs separate from application Command/Result and domain/database models
-- [ ] Prefer deriving request types from validation schemas where practical to prevent schema/type drift
-- [ ] Introduce explicit response DTO/mapping only where it provides clear boundary separation
-- [ ] Update imports/references required by the structural refactor
-- [ ] Preserve OpenAPI/Swagger consumer-visible behavior exactly
+- [x] Review request/response contracts for all existing FE-facing endpoints
+- [x] Introduce an appropriate HTTP DTO structure for request/response contracts where useful
+- [x] Keep HTTP DTOs separate from application Command/Result and domain/database models
+- [x] Prefer deriving request types from validation schemas where practical to prevent schema/type drift
+- [x] Introduce explicit response DTO/mapping only where it provides clear boundary separation
+- [x] Update imports/references required by the structural refactor
+- [x] Preserve OpenAPI/Swagger consumer-visible behavior exactly
 
 **Acceptance Criteria:**
 
-- [ ] Existing API contract is unchanged
-- [ ] No business-rule change
-- [ ] No validation-behavior change
-- [ ] No DB/transaction/locking/idempotency/concurrency change
-- [ ] Controllers have clearer HTTP boundary responsibilities
-- [ ] Existing regression tests pass
-- [ ] Senior Review / Final Gate passes
-- [ ] Prompt audit is preserved according to the existing checklist rules
+- [x] Existing API contract is unchanged
+- [x] No business-rule change
+- [x] No validation-behavior change
+- [x] No DB/transaction/locking/idempotency/concurrency change
+- [x] Controllers have clearer HTTP boundary responsibilities
+- [x] Existing regression tests pass
+- [x] Senior Review / Final Gate passes
+- [x] Prompt audit is preserved according to the existing checklist rules
+
+**Implementation evidence — 2026-09-18:**
+
+- Added explicit Sale, Payment, and Cancelled Sale response DTOs/mappers under `src/http/dtos/`; removed HTTP response shapes and serialization from domain modules.
+- Create Sale and Payment request DTO types are inferred from their existing unchanged inline Zod schemas. Schema relocation remains deferred to T-012.
+- Create Sale and Payment services now return application/domain views; all three controllers explicitly translate validated HTTP input to commands and application results to the unchanged JSON response contract.
+- OpenAPI, routes, errors, validation schemas/order, business rules, database/repository code, SQL, transactions, locks, idempotency, concurrency, migrations, seed data, dependencies, and runtime configuration were unchanged.
+- Pre-change baseline: typecheck, lint, build PASS; host regression PASS (86 passed, 58 guarded skips).
+- Post-change gates in required order: typecheck, lint, build PASS; host regression PASS (86 passed, 58 guarded skips).
+- Focused unit suite PASS (57/57). Full isolated Docker/MySQL gate PASS (144/144), including Create Sale, Payment, Cancel, validation, response contracts, idempotency, rollback, locking, concurrency, readiness, networking, and persistence.
+- `git diff --check` PASS with expected Windows line-ending warnings only. Scoped diff review found no API-contract or behavioral change.
+- AUD01 implementation-stage evidence: exact Prompt #1 and implementation/test results were recorded in `docs/prompts/T-011-api-dtos.md`; the task then remained `REVIEW` pending this independent Final Gate.
+
+**Senior Review / Final Gate evidence — 2026-09-18:**
+
+- Independent review inspected every T-011 source, test, checklist, and audit change against `docs/API.md`, OpenAPI, controller/service/domain/repository boundaries, and the T-001–T-010 Frozen Behavioral Baseline.
+- Request DTO aliases remain inferred from the unchanged strict Zod schemas. Response DTOs preserve exact snake_case fields, field presence, integer values, enums, UUIDs, ISO 8601 UTC dates, CASH `change`, QR omission of `change`, and cancelled/expired Sale shapes.
+- Test changes only adapt application-result fixtures and type imports to the new boundary; no assertion, case, expected status, error, or behavioral guarantee was weakened or removed.
+- Dependency direction and scope PASS: HTTP serialization was removed from domain/application results; no repository/database object is exposed; no generic mapper framework was added; T-012, T-013, and T-014 were not started.
+- Independent final gates in required order PASS: typecheck, lint, build, host regression (86 passed, 58 guarded skips), and isolated Docker/MySQL verification (144/144).
+- OpenAPI regression PASS (2/2 within the full suites); `src/http/openapi.ts` and `docs/API.md` are unchanged and remain consistent with the DTO mappings.
+- `git diff --check` PASS with expected Windows line-ending warnings only. No BLOCKER, MAJOR, or MINOR findings remain.
+- AUD01 Prompt #2 and actual Final Gate results are recorded verbatim in `docs/prompts/T-011-api-dtos.md`. SRG01 PASS; T-011 is `DONE`.
 
 ## T-012 Separate HTTP Validation Schemas
 

@@ -9,6 +9,7 @@ import type {
   CreateSaleCommand,
   CreateSaleResult,
 } from '../../application/services/create-sale-service.js';
+import { toSaleResponseDto } from '../dtos/sale-response-dto.js';
 import { readIdempotencyKey } from '../validation/idempotency-key.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -21,6 +22,8 @@ const createSaleBodySchema = z
     product_code: z.string(),
   })
   .strict();
+
+export type CreateSaleRequestDto = z.infer<typeof createSaleBodySchema>;
 
 export interface CreateSaleExecutor {
   execute(command: CreateSaleCommand): Promise<CreateSaleResult>;
@@ -50,12 +53,15 @@ export const createCreateSaleController = (
         );
       }
 
+      const requestDto: CreateSaleRequestDto = parsedBody.data;
       const result = await service.execute({
-        productCode: parsedBody.data.product_code,
+        productCode: requestDto.product_code,
         idempotencyKey,
       });
 
-      response.status(result.created ? HTTP_CREATED : HTTP_OK).json(result.sale);
+      response
+        .status(result.created ? HTTP_CREATED : HTTP_OK)
+        .json(toSaleResponseDto(result.sale));
     } catch (error: unknown) {
       next(error);
     }

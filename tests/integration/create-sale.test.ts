@@ -8,7 +8,7 @@ import { createApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config/environment.js';
 import { createDatabase, type Database } from '../../src/database/connection.js';
 import { createLogger } from '../../src/infrastructure/logger.js';
-import type { SaleResponse } from '../../src/domain/sale.js';
+import type { SaleResponseDto } from '../../src/http/dtos/sale-response-dto.js';
 import { waitForAdvisoryLockWait } from '../support/database-lock-wait.js';
 import { isDisposableDatabaseTestContext } from '../support/database-test-context.js';
 
@@ -190,7 +190,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-004 Create Sale',
       .send({ product_code: 'P901' })
       .expect(201);
     const afterRequest = Date.now();
-    const responseBody = response.body as unknown as SaleResponse;
+    const responseBody = response.body as unknown as SaleResponseDto;
 
     expect(Object.keys(responseBody).sort()).toEqual(EXPECTED_RESPONSE_FIELDS);
     expect(responseBody).toMatchObject({
@@ -234,7 +234,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-004 Create Sale',
       .set('Idempotency-Key', key)
       .send({ product_code: 'P902' })
       .expect(201);
-    const firstBody = firstResponse.body as unknown as SaleResponse;
+    const firstBody = firstResponse.body as unknown as SaleResponseDto;
 
     await getDatabase()('products')
       .where('product_code', 'P902')
@@ -246,7 +246,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-004 Create Sale',
         .set('Idempotency-Key', key)
         .send({ product_code: 'P902' })
         .expect(200);
-      const replayBody = replayResponse.body as unknown as SaleResponse;
+      const replayBody = replayResponse.body as unknown as SaleResponseDto;
 
       expect(replayBody.sale_id).toBe(firstBody.sale_id);
       expect(replayBody.unit_price).toBe(55);
@@ -269,8 +269,8 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-004 Create Sale',
       .set('Idempotency-Key', `${TEST_KEY_PREFIX}same-product-b`)
       .send({ product_code: 'P903' })
       .expect(201);
-    const firstBody = first.body as unknown as SaleResponse;
-    const secondBody = second.body as unknown as SaleResponse;
+    const firstBody = first.body as unknown as SaleResponseDto;
+    const secondBody = second.body as unknown as SaleResponseDto;
 
     expect(secondBody.sale_id).not.toBe(firstBody.sale_id);
 
@@ -344,7 +344,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-004 Create Sale',
         .set('Idempotency-Key', key)
         .send({ product_code: 'P905' })
         .expect(201);
-      const firstBody = first.body as unknown as SaleResponse;
+      const firstBody = first.body as unknown as SaleResponseDto;
 
       await getDatabase()('sales')
         .where('sale_id', firstBody.sale_id)
@@ -355,7 +355,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-004 Create Sale',
         .set('Idempotency-Key', key)
         .send({ product_code: 'P905' })
         .expect(200);
-      expect((replay.body as unknown as SaleResponse).status).toBe(status);
+      expect((replay.body as unknown as SaleResponseDto).status).toBe(status);
     },
   );
 
@@ -369,7 +369,7 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-004 Create Sale',
       .set('Idempotency-Key', key)
       .send({ product_code: 'P905' })
       .expect(201);
-    const firstBody = first.body as unknown as SaleResponse;
+    const firstBody = first.body as unknown as SaleResponseDto;
 
     const replay = await request(
       createLiveApp(

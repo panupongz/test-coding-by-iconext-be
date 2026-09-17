@@ -15,9 +15,7 @@ import {
 import { SaleRepository } from '../../database/repositories/sale-repository.js';
 import {
   PAYMENT_METHOD,
-  toPaymentResponse,
   type PaymentMethod,
-  type PaymentResponse,
   type PaymentView,
 } from '../../domain/payment.js';
 import { isSaleExpiredAt, SALE_STATUS } from '../../domain/sale.js';
@@ -51,7 +49,7 @@ export type PaymentResult =
   | {
       readonly kind: 'payment';
       readonly created: boolean;
-      readonly payment: PaymentResponse;
+      readonly payment: PaymentView;
     }
   | {
       readonly kind: 'expired';
@@ -286,7 +284,7 @@ export class PaymentService {
       return {
         kind: 'payment',
         created: true,
-        payment: toPaymentResponse(payment),
+        payment,
       };
     } catch (error: unknown) {
       if (isDuplicateEntryError(error)) {
@@ -342,7 +340,7 @@ export class PaymentService {
       return {
         kind: 'payment',
         created: false,
-        payment: toPaymentResponse(payment),
+        payment,
       };
     }
 

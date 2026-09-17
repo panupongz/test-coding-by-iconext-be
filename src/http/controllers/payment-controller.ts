@@ -10,6 +10,8 @@ import type {
   PaymentResult,
 } from '../../application/services/payment-service.js';
 import { PAYMENT_METHOD, type PaymentMethod } from '../../domain/payment.js';
+import { toCancelledSaleResponseDto } from '../dtos/cancelled-sale-response-dto.js';
+import { toPaymentResponseDto } from '../dtos/payment-response-dto.js';
 import { readIdempotencyKey } from '../validation/idempotency-key.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -24,6 +26,8 @@ const paymentBodySchema = z
     amount_received: z.number().int().positive(),
   })
   .strict();
+
+export type PaymentRequestDto = z.infer<typeof paymentBodySchema>;
 
 const parsePaymentMethod = (paymentMethod: string): PaymentMethod => {
   if (
@@ -69,24 +73,24 @@ export const createPaymentController = (
         );
       }
 
+      const requestDto: PaymentRequestDto = parsedBody.data;
       const result = await service.execute({
         saleId,
-        paymentMethod: parsePaymentMethod(parsedBody.data.payment_method),
-        amountReceived: parsedBody.data.amount_received,
+        paymentMethod: parsePaymentMethod(requestDto.payment_method),
+        amountReceived: requestDto.amount_received,
         idempotencyKey,
       });
 
       if (result.kind === 'expired') {
-        response.status(HTTP_OK).json({
-          sale_id: result.saleId,
-          status: result.status,
-        });
+        response
+          .status(HTTP_OK)
+          .json(toCancelledSaleResponseDto(result.saleId));
         return;
       }
 
       response
         .status(result.created ? HTTP_CREATED : HTTP_OK)
-        .json(result.payment);
+        .json(toPaymentResponseDto(result.payment));
     } catch (error: unknown) {
       next(error);
     }

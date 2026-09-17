@@ -2,8 +2,8 @@ import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../../src/app.js';
-import type { SaleResponse } from '../../src/domain/sale.js';
 import type { CreateSaleExecutor } from '../../src/http/controllers/create-sale-controller.js';
+import type { SaleResponseDto } from '../../src/http/dtos/sale-response-dto.js';
 import { createLogger } from '../../src/infrastructure/logger.js';
 
 const SALE_RESPONSE = {
@@ -18,6 +18,17 @@ const SALE_RESPONSE = {
   expires_at: '2026-09-17T00:05:00.000Z',
 };
 
+const SALE_RESULT = {
+  saleId: SALE_RESPONSE.sale_id,
+  productCode: SALE_RESPONSE.product_code,
+  name: SALE_RESPONSE.name,
+  unitPrice: SALE_RESPONSE.unit_price,
+  quantity: SALE_RESPONSE.quantity,
+  status: SALE_RESPONSE.status,
+  createdAt: new Date(SALE_RESPONSE.created_at),
+  expiresAt: new Date(SALE_RESPONSE.expires_at),
+};
+
 const logger = createLogger('silent');
 
 const createTestApp = (service: CreateSaleExecutor) => createApp(logger, service);
@@ -26,7 +37,7 @@ describe('Create Sale HTTP boundary', () => {
   it('returns the exact sale contract with 201 for a first success', async () => {
     const execute = vi.fn<CreateSaleExecutor['execute']>().mockResolvedValue({
       created: true,
-      sale: SALE_RESPONSE,
+      sale: SALE_RESULT,
     });
 
     const response = await request(createTestApp({ execute }))
@@ -35,7 +46,7 @@ describe('Create Sale HTTP boundary', () => {
       .send({ product_code: 'P001' })
       .expect(201);
 
-    const responseBody = response.body as unknown as SaleResponse;
+    const responseBody = response.body as unknown as SaleResponseDto;
     expect(responseBody).toEqual(SALE_RESPONSE);
     expect(Object.keys(responseBody)).toEqual(Object.keys(SALE_RESPONSE));
     expect(execute).toHaveBeenCalledWith({
@@ -47,7 +58,7 @@ describe('Create Sale HTTP boundary', () => {
   it('returns 200 for a successful idempotent replay', async () => {
     const execute = vi.fn<CreateSaleExecutor['execute']>().mockResolvedValue({
       created: false,
-      sale: { ...SALE_RESPONSE, status: 'CANCELLED' },
+      sale: { ...SALE_RESULT, status: 'CANCELLED' },
     });
 
     const response = await request(createTestApp({ execute }))
@@ -56,7 +67,7 @@ describe('Create Sale HTTP boundary', () => {
       .send({ product_code: 'P001' })
       .expect(200);
 
-    expect((response.body as unknown as SaleResponse).status).toBe('CANCELLED');
+    expect((response.body as unknown as SaleResponseDto).status).toBe('CANCELLED');
   });
 
   it.each([

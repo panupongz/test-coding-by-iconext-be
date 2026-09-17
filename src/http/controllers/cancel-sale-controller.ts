@@ -9,6 +9,7 @@ import type {
   CancelSaleCommand,
   CancelSaleResult,
 } from '../../application/services/cancel-sale-service.js';
+import { toCancelledSaleResponseDto } from '../dtos/cancelled-sale-response-dto.js';
 import { readIdempotencyKey } from '../validation/idempotency-key.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -48,10 +49,9 @@ export const createCancelSaleController = (
 
       const result = await service.execute({ saleId, idempotencyKey });
 
-      response.status(HTTP_OK).json({
-        sale_id: result.saleId,
-        status: result.status,
-      });
+      response
+        .status(HTTP_OK)
+        .json(toCancelledSaleResponseDto(result.saleId));
     } catch (error: unknown) {
       next(error);
     }

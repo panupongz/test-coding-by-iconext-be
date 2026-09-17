@@ -5,15 +5,13 @@ import {
   ERROR_CODES,
 } from '../../src/application/errors/application-error.js';
 import { calculatePaymentChange } from '../../src/application/services/payment-service.js';
-import {
-  PAYMENT_METHOD,
-  toPaymentResponse,
-} from '../../src/domain/payment.js';
+import { PAYMENT_METHOD } from '../../src/domain/payment.js';
 import {
   isSaleExpiredAt,
   SALE_STATUS,
-  toSaleResponse,
 } from '../../src/domain/sale.js';
+import { toPaymentResponseDto } from '../../src/http/dtos/payment-response-dto.js';
+import { toSaleResponseDto } from '../../src/http/dtos/sale-response-dto.js';
 
 const OBSERVED_AT = new Date('2026-09-17T00:05:00.000Z');
 
@@ -65,7 +63,7 @@ describe('T-009 business rules', () => {
   });
 
   it('maps a Sale to the exact public response including total and UTC times', () => {
-    const response = toSaleResponse({
+    const response = toSaleResponseDto({
       saleId: '5fe1c13b-b0b4-47d6-8e4f-d0ce39596176',
       productCode: 'P001',
       name: 'Iced Americano',
@@ -95,12 +93,12 @@ describe('T-009 business rules', () => {
       amountReceived: 100,
       paidAt: new Date('2026-09-17T00:01:00.000Z'),
     };
-    const cash = toPaymentResponse({
+    const cash = toPaymentResponseDto({
       ...sharedPayment,
       paymentMethod: PAYMENT_METHOD.cash,
       change: 40,
     });
-    const qr = toPaymentResponse({
+    const qr = toPaymentResponseDto({
       ...sharedPayment,
       paymentMethod: PAYMENT_METHOD.qrPayment,
       change: null,
@@ -118,7 +116,7 @@ describe('T-009 business rules', () => {
 
   it('rejects an invalid internal CASH view without a change value', () => {
     expect(() =>
-      toPaymentResponse({
+      toPaymentResponseDto({
         paymentId: '6e39f08a-43db-4c21-9d0f-2c6574349308',
         paymentMethod: PAYMENT_METHOD.cash,
         amountReceived: 60,

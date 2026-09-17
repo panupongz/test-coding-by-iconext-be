@@ -15,6 +15,14 @@ const PAYMENT_RESPONSE = {
   change: 40,
 };
 
+const PAYMENT_RESULT = {
+  paymentId: PAYMENT_RESPONSE.payment_id,
+  paymentMethod: PAYMENT_RESPONSE.payment_method,
+  amountReceived: PAYMENT_RESPONSE.amount_received,
+  paidAt: new Date(PAYMENT_RESPONSE.paid_at),
+  change: PAYMENT_RESPONSE.change,
+};
+
 const createSaleService: CreateSaleExecutor = {
   execute: vi.fn<CreateSaleExecutor['execute']>(),
 };
@@ -28,7 +36,7 @@ describe('Payment HTTP boundary', () => {
     const execute = vi.fn<PaymentExecutor['execute']>().mockResolvedValue({
       kind: 'payment',
       created: true,
-      payment: PAYMENT_RESPONSE,
+      payment: PAYMENT_RESULT,
     });
 
     const response = await request(createTestApp({ execute }))
@@ -50,7 +58,7 @@ describe('Payment HTTP boundary', () => {
     const execute = vi.fn<PaymentExecutor['execute']>().mockResolvedValue({
       kind: 'payment',
       created: false,
-      payment: PAYMENT_RESPONSE,
+      payment: PAYMENT_RESULT,
     });
 
     await request(createTestApp({ execute }))
