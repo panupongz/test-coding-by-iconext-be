@@ -1,5 +1,4 @@
 import type { RequestHandler } from 'express';
-import { z } from 'zod';
 
 import {
   ApplicationError,
@@ -9,39 +8,20 @@ import type {
   PaymentCommand,
   PaymentResult,
 } from '../../application/services/payment-service.js';
-import { PAYMENT_METHOD, type PaymentMethod } from '../../domain/payment.js';
 import { toCancelledSaleResponseDto } from '../dtos/cancelled-sale-response-dto.js';
 import { toPaymentResponseDto } from '../dtos/payment-response-dto.js';
 import { readIdempotencyKey } from '../validation/idempotency-key.js';
+import {
+  parsePaymentMethod,
+  paymentBodySchema,
+  type PaymentRequestDto,
+} from '../validation/payment-request.js';
+import { saleIdSchema } from '../validation/sale-id.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
 const HTTP_CREATED = 201;
 const HTTP_OK = 200;
-
-const uuidSchema = z.uuid();
-const paymentBodySchema = z
-  .object({
-    payment_method: z.string(),
-    amount_received: z.number().int().positive(),
-  })
-  .strict();
-
-export type PaymentRequestDto = z.infer<typeof paymentBodySchema>;
-
-const parsePaymentMethod = (paymentMethod: string): PaymentMethod => {
-  if (
-    paymentMethod === PAYMENT_METHOD.cash ||
-    paymentMethod === PAYMENT_METHOD.qrPayment
-  ) {
-    return paymentMethod;
-  }
-
-  throw new ApplicationError(
-    HTTP_BAD_REQUEST,
-    ERROR_CODES.unsupportedPaymentMethod,
-  );
-};
 
 export interface PaymentExecutor {
   execute(command: PaymentCommand): Promise<PaymentResult>;
@@ -54,7 +34,10 @@ export const createPaymentController = (
     try {
       const saleId = request.params.sale_id;
 
-      if (typeof saleId !== 'string' || !uuidSchema.safeParse(saleId).success) {
+      if (
+        typeof saleId !== 'string' ||
+        !saleIdSchema.safeParse(saleId).success
+      ) {
         throw new ApplicationError(
           HTTP_NOT_FOUND,
           ERROR_CODES.saleNotFound,

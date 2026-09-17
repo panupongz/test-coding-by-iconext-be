@@ -1,5 +1,4 @@
 import type { RequestHandler } from 'express';
-import { z } from 'zod';
 
 import {
   ApplicationError,
@@ -10,20 +9,16 @@ import type {
   CreateSaleResult,
 } from '../../application/services/create-sale-service.js';
 import { toSaleResponseDto } from '../dtos/sale-response-dto.js';
+import {
+  createSaleBodySchema,
+  productCodeSchema,
+  type CreateSaleRequestDto,
+} from '../validation/create-sale-request.js';
 import { readIdempotencyKey } from '../validation/idempotency-key.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_CREATED = 201;
 const HTTP_OK = 200;
-
-const productCodeSchema = z.string().regex(/^P\d{3}$/);
-const createSaleBodySchema = z
-  .object({
-    product_code: z.string(),
-  })
-  .strict();
-
-export type CreateSaleRequestDto = z.infer<typeof createSaleBodySchema>;
 
 export interface CreateSaleExecutor {
   execute(command: CreateSaleCommand): Promise<CreateSaleResult>;

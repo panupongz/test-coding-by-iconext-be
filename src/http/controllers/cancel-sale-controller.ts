@@ -1,5 +1,4 @@
 import type { RequestHandler } from 'express';
-import { z } from 'zod';
 
 import {
   ApplicationError,
@@ -10,13 +9,13 @@ import type {
   CancelSaleResult,
 } from '../../application/services/cancel-sale-service.js';
 import { toCancelledSaleResponseDto } from '../dtos/cancelled-sale-response-dto.js';
+import { cancelSaleBodySchema } from '../validation/cancel-sale-request.js';
 import { readIdempotencyKey } from '../validation/idempotency-key.js';
+import { saleIdSchema } from '../validation/sale-id.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
 const HTTP_OK = 200;
-
-const uuidSchema = z.uuid();
 
 export interface CancelSaleExecutor {
   execute(command: CancelSaleCommand): Promise<CancelSaleResult>;
@@ -29,7 +28,10 @@ export const createCancelSaleController = (
     try {
       const saleId = request.params.sale_id;
 
-      if (typeof saleId !== 'string' || !uuidSchema.safeParse(saleId).success) {
+      if (
+        typeof saleId !== 'string' ||
+        !saleIdSchema.safeParse(saleId).success
+      ) {
         throw new ApplicationError(
           HTTP_NOT_FOUND,
           ERROR_CODES.saleNotFound,
@@ -40,7 +42,7 @@ export const createCancelSaleController = (
         request.get('Idempotency-Key'),
       );
 
-      if (request.body !== undefined) {
+      if (!cancelSaleBodySchema.safeParse(request.body).success) {
         throw new ApplicationError(
           HTTP_BAD_REQUEST,
           ERROR_CODES.validation,

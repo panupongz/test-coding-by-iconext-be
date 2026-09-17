@@ -855,27 +855,51 @@ If any refactor requires changing behavior approved in T-001–T-010: **STOP and
 
 ## T-012 Separate HTTP Validation Schemas
 
-**Current Status:** TODO
+**Current Status:** DONE
 
 **Objective:** Move HTTP validation definitions into clear boundary modules without changing validation semantics.
 
 **Sub-tasks:**
 
-- [ ] Move existing Zod/request validation schemas out of controllers where appropriate
-- [ ] Do not rewrite validation rules merely for style
-- [ ] Preserve strictness, coercion behavior, unknown-field handling, error ordering, and error mapping
-- [ ] Centralize reusable schemas only when actual reuse exists
-- [ ] Derive request DTO types from schemas where appropriate
+- [x] Move existing Zod/request validation schemas out of controllers where appropriate
+- [x] Do not rewrite validation rules merely for style
+- [x] Preserve strictness, coercion behavior, unknown-field handling, error ordering, and error mapping
+- [x] Centralize reusable schemas only when actual reuse exists
+- [x] Derive request DTO types from schemas where appropriate
 
 **Acceptance Criteria:**
 
-- [ ] Existing valid requests remain valid
-- [ ] Existing invalid requests remain invalid with equivalent HTTP/error behavior
-- [ ] No API/business/DB behavior changes
-- [ ] Controllers become more focused on HTTP orchestration
-- [ ] Existing validation and regression tests pass
-- [ ] Senior Review / Final Gate passes
-- [ ] Prompt audit is preserved
+- [x] Existing valid requests remain valid
+- [x] Existing invalid requests remain invalid with equivalent HTTP/error behavior
+- [x] No API/business/DB behavior changes
+- [x] Controllers become more focused on HTTP orchestration
+- [x] Existing validation and regression tests pass
+- [x] Senior Review / Final Gate passes
+- [x] Prompt audit is preserved
+
+**Implementation evidence — 2026-09-18:**
+
+- Moved the unchanged Create Sale body and product-code schemas to `src/http/validation/create-sale-request.ts`; `CreateSaleRequestDto` remains inferred directly from the body schema.
+- Moved the unchanged Payment body schema and payment-method validation helper to `src/http/validation/payment-request.ts`; `PaymentRequestDto` remains inferred directly from the body schema.
+- Centralized the identical Payment/Cancel UUID path schema in `src/http/validation/sale-id.ts`, and expressed the existing Cancel no-body rule as `z.undefined()` in `src/http/validation/cancel-sale-request.ts`.
+- Controller execution order remains unchanged: Create Sale validates header → body shape → product-code format; Payment validates path → header → body shape → supported method; Cancel validates path → header → absent body.
+- Pre-change baseline PASS in required order: typecheck, lint, build, host regression (86 passed, 58 guarded skips).
+- Post-change gates PASS in required order: typecheck, lint, build, host regression (86 passed, 58 guarded skips). Focused Create Sale/Payment/Cancel/validation/OpenAPI suite PASS (56/56).
+- Full isolated Docker/MySQL gate PASS (144/144), including endpoint validation, error contracts, idempotency, transactions, locking, concurrency, schema, seed, networking, readiness, and volume persistence.
+- OpenAPI, routes, response DTO mappings, application/domain/database code, SQL, migrations, seed data, dependencies, and runtime configuration are unchanged.
+- AUD01 Prompt #1 and implementation/test evidence are recorded in `docs/prompts/T-012-http-validation-schemas.md`. T-012 remains `REVIEW` pending an independent Senior Review / Final Gate.
+
+**Senior Review / Final Gate evidence — 2026-09-18:**
+
+- Independent comparison against the pre-T-012 `HEAD` controllers confirmed the Create Sale and Payment schema definitions and payment-method mapping are unchanged; the shared Payment/Cancel path schema remains exactly `z.uuid()`.
+- Cancel's `z.undefined()` body schema accepts exactly the previous `request.body === undefined` case. Path → header → body validation order and all status/code/message mappings remain unchanged.
+- Boundary review PASS: validation remains under `src/http/validation/`; request DTOs are inferred from schemas; application/domain/database models do not consume HTTP DTOs; T-011 response DTO mappings remain intact; only the genuinely duplicated Sale UUID schema was centralized.
+- Test-integrity review PASS: no test file, assertion, expected status/code/message, skip, dependency, route, OpenAPI definition, service, domain, repository, SQL, migration, seed, transaction, lock, idempotency, concurrency, or runtime configuration changed. T-013 and T-014 remain `TODO`.
+- Independent final gates in required order PASS: typecheck, lint, build, host regression (86 passed, 58 guarded skips).
+- Focused validation plus complete unit verification PASS (75/75 combined; complete unit suite 57/57, including OpenAPI 2/2). Isolated Docker/MySQL full gate PASS (144/144).
+- `git diff --check` PASS with expected Windows line-ending warnings only. No BLOCKER, MAJOR, or MINOR findings remain.
+- Non-blocking pre-existing NOTE: `docs/API.md` says a JSON `null` Cancel body returns `VALIDATION_ERROR`, while the unchanged Express strict-parser behavior and existing regression test return `MALFORMED_JSON`. T-012 did not introduce or alter this behavior; resolving the historical contract inconsistency requires separate explicit scope.
+- AUD01 Prompt #2 and actual independent Final Gate results are recorded verbatim in `docs/prompts/T-012-http-validation-schemas.md`. SRG01 PASS; T-012 is `DONE`.
 
 ## T-013 Review Service Responsibilities / Targeted Cleanup
 
