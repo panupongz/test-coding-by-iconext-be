@@ -15,6 +15,7 @@ import {
 import { SaleRepository } from '../../database/repositories/sale-repository.js';
 import {
   SALE_STATUS,
+  isSaleExpiredAt,
   toSaleResponse,
   type SaleResponse,
   type SaleView,
@@ -256,7 +257,7 @@ export class CreateSaleService {
 
       if (
         lockedSale.status === SALE_STATUS.pending &&
-        lockedSale.expiresAt.getTime() <= this.now().getTime()
+        isSaleExpiredAt(lockedSale.expiresAt, this.now())
       ) {
         await this.saleRepository.markCancelled(transaction, lockedSale.saleId);
       }

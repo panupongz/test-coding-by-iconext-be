@@ -20,7 +20,7 @@ import {
   type PaymentResponse,
   type PaymentView,
 } from '../../domain/payment.js';
-import { SALE_STATUS } from '../../domain/sale.js';
+import { isSaleExpiredAt, SALE_STATUS } from '../../domain/sale.js';
 import { createRequestFingerprint } from '../request-fingerprint.js';
 
 const HTTP_NOT_FOUND = 404;
@@ -81,6 +81,32 @@ const isDuplicateEntryError = (error: unknown): boolean =>
   typeof error === 'object' &&
   error !== null &&
   (error as MysqlError).code === 'ER_DUP_ENTRY';
+
+export const calculatePaymentChange = (
+  paymentMethod: PaymentMethod,
+  amountReceived: number,
+  total: number,
+): number | null => {
+  if (paymentMethod === PAYMENT_METHOD.cash) {
+    if (amountReceived < total) {
+      throw new ApplicationError(
+        400,
+        ERROR_CODES.insufficientCashAmount,
+      );
+    }
+
+    return amountReceived - total;
+  }
+
+  if (amountReceived !== total) {
+    throw new ApplicationError(
+      400,
+      ERROR_CODES.qrAmountMismatch,
+    );
+  }
+
+  return null;
+};
 
 export class PaymentService {
   private readonly now: () => Date;
@@ -190,8 +216,8 @@ export class PaymentService {
         const paidAt = this.now();
 
         if (
-          sale.expiresAt.getTime() <= requestReceivedAt.getTime() ||
-          sale.expiresAt.getTime() <= paidAt.getTime()
+          isSaleExpiredAt(sale.expiresAt, requestReceivedAt) ||
+          isSaleExpiredAt(sale.expiresAt, paidAt)
         ) {
           await this.saleRepository.markCancelled(transaction, sale.saleId);
           await this.idempotencyRepository.markSucceeded(
@@ -204,7 +230,11 @@ export class PaymentService {
         }
 
         const total = sale.unitPrice * sale.quantity;
-        const change = this.calculateChange(command, total);
+        const change = calculatePaymentChange(
+          command.paymentMethod,
+          command.amountReceived,
+          total,
+        );
         const paymentId = this.generatePaymentId();
 
         await this.saleRepository.insertPayment(transaction, {
@@ -277,28 +307,6 @@ export class PaymentService {
       );
       throw error;
     }
-  }
-
-  private calculateChange(command: PaymentCommand, total: number): number | null {
-    if (command.paymentMethod === PAYMENT_METHOD.cash) {
-      if (command.amountReceived < total) {
-        throw new ApplicationError(
-          400,
-          ERROR_CODES.insufficientCashAmount,
-        );
-      }
-
-      return command.amountReceived - total;
-    }
-
-    if (command.amountReceived !== total) {
-      throw new ApplicationError(
-        400,
-        ERROR_CODES.qrAmountMismatch,
-      );
-    }
-
-    return null;
   }
 
   private async resolveExisting(

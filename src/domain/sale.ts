@@ -29,6 +29,11 @@ export interface SaleResponse {
   readonly expires_at: string;
 }
 
+export const isSaleExpiredAt = (
+  expiresAt: Date,
+  observedAt: Date,
+): boolean => expiresAt.getTime() <= observedAt.getTime();
+
 export const toSaleResponse = (sale: SaleView): SaleResponse => ({
   sale_id: sale.saleId,
   product_code: sale.productCode,

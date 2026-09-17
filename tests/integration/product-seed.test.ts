@@ -103,6 +103,9 @@ describe.skipIf(!disposableDatabaseTestContextIsConfigured)('T-003 product seed'
 
   beforeEach(async () => {
     testTransaction = await getDatabase().transaction();
+    await testTransaction('products')
+      .whereIn('product_code', PRODUCT_CODES)
+      .delete();
   });
 
   afterEach(async () => {

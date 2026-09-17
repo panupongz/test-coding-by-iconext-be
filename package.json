@@ -18,6 +18,7 @@
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
+    "test:docker": "node tests/environment/verify-docker-environment.js",
     "db:migrate": "tsx src/database/migrate.ts",
     "db:migrate:production": "node dist/database/migrate.js",
     "db:seed": "tsx src/database/seed.ts",

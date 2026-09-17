@@ -668,7 +668,7 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 ## T-009 Unit / Integration Tests
 
-**Current Status:** TODO
+**Current Status:** DONE
 
 **Objective:** สร้าง unit/integration test suite ที่พิสูจน์ business behavior, database effects, concurrency และ Docker environment
 
@@ -676,34 +676,45 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 **Sub-tasks:**
 
-- [ ] unit tests: pattern, money/change, QR equality, expiry, response mapping, request identity และ error mapping
-- [ ] integration testsกับ MySQL: migration, exact seed, APIs, constraints, rollback, separate FAILED persistence, concurrency, replay
-- [ ] test matrixครอบคลุม TC ของ T-001–T-008 พร้อม expected HTTP/body/DB state
-- [ ] เพิ่ม assertions สำหรับ TECH01–TECH04 และรันพร้อม test suite ตอน implementation
-- [ ] เพิ่ม environment verification สำหรับ Compose config/build/start, MySQL healthcheck, backend-to-`mysql` networking, readiness และ volume persistence
-- [ ] ทำให้ test command execute ภายใน `backend` containerได้
+- [x] unit tests: pattern, money/change, QR equality, expiry, response mapping, request identity และ error mapping
+- [x] integration testsกับ MySQL: migration, exact seed, APIs, constraints, rollback, separate FAILED persistence, concurrency, replay
+- [x] test matrixครอบคลุม TC ของ T-001–T-008 พร้อม expected HTTP/body/DB state
+- [x] เพิ่ม assertions สำหรับ TECH01–TECH04 และรันพร้อม test suite ตอน implementation
+- [x] เพิ่ม environment verification สำหรับ Compose config/build/start, MySQL healthcheck, backend-to-`mysql` networking, readiness และ volume persistence
+- [x] ทำให้ test command execute ภายใน `backend` containerได้
 
 **Acceptance Criteria:** active requirements ทุกข้อมี test trace; superseded behaviorไม่มี assertion; concurrency/rollback/retry deterministic; Docker environment verification ผ่าน; test suite execute ภายใน backend containerและ PASS
 
 **Required Tests:**
 
-- TC-009.1: matrix ครอบคลุม Create/Payment/Cancel/Seed/Schema/Validation
-- TC-009.2: success replay, different-request conflict และ FAILED retryครบสาม APIs
-- TC-009.3: migration/seed/FK/unique/transaction/concurrency ใช้ MySQL-compatible environment
-- TC-009.4: TECH01–TECH04 มี assertionsครบ; full suite PASS
-- TC-009.5: validate/build/start Compose → servicesถูกต้อง, MySQL healthy และ backendเชื่อมต่อผ่าน service name `mysql`
-- TC-009.6: run migration, seed และ test commands ภายใน backend container → ทุก commandสำเร็จ
-- TC-009.7: restart/recreate services โดยคง volume → MySQL data persistenceผ่าน
-- TC-009.8: remove/withhold MySQL readinessระหว่าง startup → backendไม่รายงานพร้อมก่อน DB ready และ recover/connectหลัง DB healthy
+- [x] TC-009.1: matrix ครอบคลุม Create/Payment/Cancel/Seed/Schema/Validation
+- [x] TC-009.2: success replay, different-request conflict และ FAILED retryครบสาม APIs
+- [x] TC-009.3: migration/seed/FK/unique/transaction/concurrency ใช้ MySQL-compatible environment
+- [x] TC-009.4: TECH01–TECH04 มี assertionsครบ; full suite PASS
+- [x] TC-009.5: validate/build/start Compose → servicesถูกต้อง, MySQL healthy และ backendเชื่อมต่อผ่าน service name `mysql`
+- [x] TC-009.6: run migration, seed และ test commands ภายใน backend container → ทุก commandสำเร็จ
+- [x] TC-009.7: restart/recreate services โดยคง volume → MySQL data persistenceผ่าน
+- [x] TC-009.8: remove/withhold MySQL readinessระหว่าง startup → backendไม่รายงานพร้อมก่อน DB ready และ recover/connectหลัง DB healthy
+
+**Implementation evidence (2026-09-17):**
+
+- เพิ่ม `tests/unit/business-rules.test.ts` สำหรับ integer CASH/change, QR equality, inclusive expiry boundary และ exact Sale/Payment response mapping; pattern/request identity/error mappingเดิมยังรันร่วมกัน
+- เพิ่ม `docs/TEST_MATRIX.md` เพื่อ trace TC ของ T-001–T-008 ไปยัง expected HTTP/body/DB/environment state และ executable test files
+- เพิ่ม `npm run test:docker` ซึ่งใช้ isolated Compose project เพื่อตรวจ config/build/start, MySQL 8.x health, host `mysql`, readiness withholding/recovery, container migration/seed/full tests และ named-volume persistence
+- แก้ test isolation defect ที่พบระหว่าง full Docker run: Product seed testsล้าง canonical rowsภายใน rollback transaction และ Payment fixed-time fixture derive `created_at` จาก `expires_at`
+- Disposable MySQL 8.4/backend-container full suite: PASS 142/142 testsใน 15 files; host suite: PASS 84 tests + 58 expected DB-context skips; unit: PASS 55/55
+- Typecheck, lint, build และ `git diff --check`: PASS; diff checkมีเพียง line-ending conversion warnings
+- TC-009.1–TC-009.8: PASS; independent SRG01พบและแก้ readiness false-positiveหนึ่งรายการ จากนั้น full Docker/MySQL gateและ static gatesผ่านซ้ำ
+- Final Gate: PASS — direct TCP probeพิสูจน์ backendไม่เปิด listenerก่อน MySQL พร้อม, exact fresh seedตรวจทั้ง table, fixture fixesไม่ลด production behavior, ไม่มี unresolved HIGH/MEDIUM finding และ T-009ปิดเป็น `DONE`
 
 **Definition of Done:**
 
-- [ ] Sub-tasksและ Acceptance Criteria ของ T-009 ผ่าน
-- [ ] Test codeผ่าน strict TypeScript/typecheckและ lint
-- [ ] Unit/integration/Docker/concurrency suitesทั้งหมดผ่านและไม่ flaky
-- [ ] SRG01 ตรวจ test coverage/assertion quality/isolationและไม่มี unresolved HIGH/MEDIUM findings
-- [ ] Test commands/results summaryและ checklistอัปเดต
-- [ ] Prompt audit trail updated
+- [x] Sub-tasksและ Acceptance Criteria ของ T-009 ผ่าน
+- [x] Test codeผ่าน strict TypeScript/typecheckและ lint
+- [x] Unit/integration/Docker/concurrency suitesทั้งหมดผ่านและไม่ flaky
+- [x] SRG01 ตรวจ test coverage/assertion quality/isolationและไม่มี unresolved HIGH/MEDIUM findings
+- [x] Test commands/results summaryและ checklistอัปเดต
+- [x] Prompt audit trail updated
 
 ## T-010 README + API Documentation
 

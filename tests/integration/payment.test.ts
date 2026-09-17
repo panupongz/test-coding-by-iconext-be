@@ -157,7 +157,7 @@ const createSale = async (
     unit_price: TEST_PRODUCT.price,
     quantity: 1,
     status,
-    created_at: new Date(Date.now() - 60_000),
+    created_at: new Date(expiresAt.getTime() - 5 * 60 * 1000),
     expires_at: expiresAt,
   });
 
