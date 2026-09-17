@@ -962,7 +962,7 @@ This task is **Review → Refactor only if justified**. A documented **no-code-c
 
 ## T-014 Review Repository Dependency Boundary
 
-**Current Status:** TODO
+**Current Status:** DONE
 
 **Objective:** Review the application-to-repository dependency boundary and introduce abstraction only when it provides concrete dependency-direction or testability value.
 
@@ -970,42 +970,58 @@ This task is **Review → Refactor only if justified**. A documented **no-code-c
 
 **Sub-tasks:**
 
-- [ ] Inventory application-layer dependencies on concrete database repositories
-- [ ] Evaluate dependency direction and testability
-- [ ] Introduce repository interface/port only where clearly justified
-- [ ] Keep concrete MySQL/data-access implementation in the appropriate database/infrastructure layer
-- [ ] Do NOT rewrite SQL as part of this architectural review
-- [ ] Preserve query behavior, returned values, null semantics, transactions, and locking
-- [ ] Keep dependency wiring explicit and testable
+- [x] Inventory application-layer dependencies on concrete database repositories
+- [x] Evaluate dependency direction and testability
+- [x] Introduce repository interface/port only where clearly justified — no candidate met the evidence threshold, so none was introduced
+- [x] Keep concrete MySQL/data-access implementation in the appropriate database/infrastructure layer
+- [x] Do NOT rewrite SQL as part of this architectural review
+- [x] Preserve query behavior, returned values, null semantics, transactions, and locking
+- [x] Keep dependency wiring explicit and testable
 
 **Acceptance Criteria:**
 
-- [ ] Existing SQL behavior is unchanged
-- [ ] Database schema/migrations/seed remain unchanged
-- [ ] Repository return/null semantics remain unchanged
-- [ ] Transaction/locking/idempotency/concurrency behavior remains unchanged
-- [ ] No interface/port is introduced without concrete value
-- [ ] A no-code-change review result may pass when justified
-- [ ] Existing repository/integration/regression tests pass
-- [ ] Senior Review / Final Gate passes
-- [ ] Prompt audit is preserved
+- [x] Existing SQL behavior is unchanged
+- [x] Database schema/migrations/seed remain unchanged
+- [x] Repository return/null semantics remain unchanged
+- [x] Transaction/locking/idempotency/concurrency behavior remains unchanged
+- [x] No interface/port is introduced without concrete value
+- [x] A no-code-change review result is justified and documented
+- [x] Existing repository/integration/regression tests pass
+- [x] Senior Review / Final Gate passes
+- [x] Prompt audit is preserved
+
+**Implementation/review evidence — 2026-09-18:**
+
+- Review result: no production-code change. The three application services depend directly on `SaleRepository` and `IdempotencyRepository`, but consume domain-oriented records and explicit Knex connection/transaction handles; they do not contain SQL, table/column names, query-builder operations, or MySQL row mapping.
+- The service constructors already expose repository substitution seams through options and production wiring remains explicit in `src/server.ts`. TypeScript's structural typing permits substitutes that satisfy the current public shape, although the existing behavior-critical tests intentionally use real MySQL because transactions, advisory locks, row locks, SQL, and constraints are part of the behavior under test.
+- A repository interface alone would still expose `Knex.Transaction` / `Knex`, mechanically duplicate the concrete APIs, and would not isolate service tests from `database.transaction`, the pinned advisory-lock connection, or database concurrency semantics. A meaningful database-independent unit boundary would require a larger transaction/unit-of-work and lock abstraction with no demonstrated need, so it would be premature and outside T-014 scope.
+- All calls inside active business or failure-persistence transactions receive the callback's `transaction`. The only global-pool repository reads occur after the relevant transaction has ended: duplicate-key idempotency lookup and Payment replay lookup. Create Sale replay uses the pinned connection and passes its transaction to the Sale lock/read/update calls. No active transaction falls back to the global pool.
+- SQL text, parameters, query ordering, `SELECT ... FOR UPDATE`, advisory-lock ordering, transaction connection pinning, commit/rollback order, separate `FAILED` persistence, repository `undefined` not-found semantics, schema, migrations, seed, and constraints are unchanged.
+- Baseline gates in required order PASS: typecheck, lint, build, host regression (90 passed, 58 guarded skips).
+- Final ordered host gates after documentation updates PASS: typecheck, lint, build, host regression (90 passed, 58 guarded skips); complete unit suite PASS (61/61).
+- Isolated Docker/MySQL full regression PASS (148/148): Create Sale 13/13, Payment 18/18, Cancel 13/13, database schema 10/10, validation/error 18/18, plus unit/API/OpenAPI, idempotency, rollback/failure injection, advisory-lock, Sale row-lock, expiry, and cross-workflow concurrency coverage. The initial sandboxed attempt was blocked by local Docker permissions; the approved retry passed and removed all disposable resources.
+- Runtime routes, `docs/API.md`, OpenAPI, and README remain consistent for the three existing endpoints. The pre-existing Cancel JSON `null` documentation/runtime note from T-012 remains unchanged and outside T-014 scope.
+- `git diff --check` PASS with expected Windows line-ending warnings only; the new audit file also has no whitespace errors.
+- Independent Senior Review found no BLOCKER, MAJOR, or MINOR findings. Decision **A — NO INTERFACE/PORT JUSTIFIED** is confirmed. Two non-blocking notes remain: the deliberately MySQL-specific advisory-lock helper should be revisited only if a real alternate lock/database boundary is required, and the pre-existing Cancel JSON `null` documentation/runtime discrepancy remains outside T-014.
+- Independent final gates PASS: typecheck, lint, build, host regression (90 passed, 58 guarded skips), complete unit suite (61/61), focused HTTP/OpenAPI suite (38/38), and isolated Docker/MySQL full gate (148/148). Test-history review confirmed T-011 preserved assertions while adapting DTO fixtures/types, T-012 changed no tests, T-013 added four focused tests, and T-014 changed no tests.
+- T-014 is `DONE`: all acceptance criteria, SRG01, AUD01, and the Final Regression Gate after T-014 pass with no unresolved BLOCKER, MAJOR, or MINOR findings.
 
 ## Final Regression Gate after T-014
 
 Completion of T-014 must be followed by a full regression gate covering:
 
-- [ ] Typecheck
-- [ ] Lint
-- [ ] Build
-- [ ] Unit tests
-- [ ] Integration tests
-- [ ] Docker/MySQL integration where applicable
-- [ ] API contract regression for all existing endpoints
-- [ ] Validation/error regression
-- [ ] Idempotency regression
-- [ ] Concurrency regression
-- [ ] Runtime API ↔ OpenAPI/Swagger ↔ README consistency
-- [ ] Confirmation that T-001–T-010 behavior remains unchanged
+- [x] Typecheck
+- [x] Lint
+- [x] Build
+- [x] Unit tests
+- [x] Integration tests
+- [x] Docker/MySQL integration where applicable
+- [x] API contract regression for all existing endpoints
+- [x] Validation/error regression
+- [x] Idempotency regression
+- [x] Concurrency regression
+- [x] Runtime API ↔ OpenAPI/Swagger ↔ README consistency
+- [x] Confirmation that T-001–T-010 behavior remains unchanged
 
 ## Gate ก่อนเริ่ม implementation
 

@@ -30,6 +30,7 @@
 | T-011 | `T-011-api-dtos.md` |
 | T-012 | `T-012-http-validation-schemas.md` |
 | T-013 | `T-013-service-responsibilities.md` |
+| T-014 | `T-014-repository-dependency-boundary.md` |
 
 ## Update sequence
 
