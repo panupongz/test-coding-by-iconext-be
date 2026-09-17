@@ -774,6 +774,164 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 - [x] README/API docsและ checklistสะท้อน implementationจริง
 - [x] Prompt audit trail updated
 
+## T-011–T-014 Shared Refactor Guardrails
+
+T-001–T-010 define the approved **Frozen Behavioral Baseline**. Throughout T-011–T-014, the following behavior MUST remain unchanged:
+
+- API endpoint paths and HTTP methods
+- Request headers and request JSON contract
+- Response JSON contract, field names, types, null semantics, and date formats
+- HTTP status codes
+- Error codes, messages, and error mapping
+- Validation behavior
+- Business rules and sale-state behavior
+- Database schema, migrations, and seed data
+- Existing SQL behavior
+- Transaction boundaries and commit/rollback behavior
+- Locking strategy and lock ordering
+- Idempotency algorithm, fingerprint, replay behavior, and conflict behavior
+- Concurrency behavior
+- Docker/runtime behavior
+
+Do NOT weaken, delete, or modify existing tests merely to make a refactor pass.
+
+Before each refactor task, the existing regression suite must pass. After each task, run the relevant gates in this order:
+
+```text
+typecheck → lint → build → existing tests/regression tests
+```
+
+If any refactor requires changing behavior approved in T-001–T-010: **STOP and report the required behavioral change for explicit approval. Do not make the behavioral change automatically.**
+
+## T-011 Separate API Request/Response DTOs
+
+**Current Status:** TODO
+
+**Objective:** Make HTTP request/response contracts explicit and discoverable while preserving the existing external API contract.
+
+**Sub-tasks:**
+
+- [ ] Review request/response contracts for all existing FE-facing endpoints
+- [ ] Introduce an appropriate HTTP DTO structure for request/response contracts where useful
+- [ ] Keep HTTP DTOs separate from application Command/Result and domain/database models
+- [ ] Prefer deriving request types from validation schemas where practical to prevent schema/type drift
+- [ ] Introduce explicit response DTO/mapping only where it provides clear boundary separation
+- [ ] Update imports/references required by the structural refactor
+- [ ] Preserve OpenAPI/Swagger consumer-visible behavior exactly
+
+**Acceptance Criteria:**
+
+- [ ] Existing API contract is unchanged
+- [ ] No business-rule change
+- [ ] No validation-behavior change
+- [ ] No DB/transaction/locking/idempotency/concurrency change
+- [ ] Controllers have clearer HTTP boundary responsibilities
+- [ ] Existing regression tests pass
+- [ ] Senior Review / Final Gate passes
+- [ ] Prompt audit is preserved according to the existing checklist rules
+
+## T-012 Separate HTTP Validation Schemas
+
+**Current Status:** TODO
+
+**Objective:** Move HTTP validation definitions into clear boundary modules without changing validation semantics.
+
+**Sub-tasks:**
+
+- [ ] Move existing Zod/request validation schemas out of controllers where appropriate
+- [ ] Do not rewrite validation rules merely for style
+- [ ] Preserve strictness, coercion behavior, unknown-field handling, error ordering, and error mapping
+- [ ] Centralize reusable schemas only when actual reuse exists
+- [ ] Derive request DTO types from schemas where appropriate
+
+**Acceptance Criteria:**
+
+- [ ] Existing valid requests remain valid
+- [ ] Existing invalid requests remain invalid with equivalent HTTP/error behavior
+- [ ] No API/business/DB behavior changes
+- [ ] Controllers become more focused on HTTP orchestration
+- [ ] Existing validation and regression tests pass
+- [ ] Senior Review / Final Gate passes
+- [ ] Prompt audit is preserved
+
+## T-013 Review Service Responsibilities / Targeted Cleanup
+
+**Current Status:** TODO
+
+**Objective:** Review application service responsibilities and perform targeted cleanup only where there is concrete maintainability or testability value.
+
+This task is **Review → Refactor only if justified**. A documented **no-code-change outcome is acceptable** if the existing service responsibilities are already appropriate.
+
+**Sub-tasks:**
+
+- [ ] Review create-sale, payment, and cancel service responsibilities
+- [ ] Identify concrete duplication, mixed responsibilities, or clearly reusable logic
+- [ ] Extract responsibilities only when separation provides measurable clarity/testability value
+- [ ] Preserve the exact ordering of business operations
+- [ ] Preserve transaction scope
+- [ ] Preserve lock acquisition/order
+- [ ] Preserve idempotency behavior
+- [ ] Preserve error propagation/mapping
+- [ ] Do not introduce generic manager/helper/service layers merely for architectural appearance
+
+**Acceptance Criteria:**
+
+- [ ] No behavioral change
+- [ ] No transaction/locking/idempotency/concurrency change
+- [ ] Any extraction has a clear documented reason
+- [ ] No unnecessary abstraction is introduced
+- [ ] A no-code-change review result may pass the task when justified
+- [ ] Existing regression/integration/idempotency/concurrency tests pass
+- [ ] Senior Review / Final Gate passes
+- [ ] Prompt audit is preserved
+
+## T-014 Review Repository Dependency Boundary
+
+**Current Status:** TODO
+
+**Objective:** Review the application-to-repository dependency boundary and introduce abstraction only when it provides concrete dependency-direction or testability value.
+
+This task is **Review → Refactor only if justified**. A documented **no-code-change outcome is acceptable**.
+
+**Sub-tasks:**
+
+- [ ] Inventory application-layer dependencies on concrete database repositories
+- [ ] Evaluate dependency direction and testability
+- [ ] Introduce repository interface/port only where clearly justified
+- [ ] Keep concrete MySQL/data-access implementation in the appropriate database/infrastructure layer
+- [ ] Do NOT rewrite SQL as part of this architectural review
+- [ ] Preserve query behavior, returned values, null semantics, transactions, and locking
+- [ ] Keep dependency wiring explicit and testable
+
+**Acceptance Criteria:**
+
+- [ ] Existing SQL behavior is unchanged
+- [ ] Database schema/migrations/seed remain unchanged
+- [ ] Repository return/null semantics remain unchanged
+- [ ] Transaction/locking/idempotency/concurrency behavior remains unchanged
+- [ ] No interface/port is introduced without concrete value
+- [ ] A no-code-change review result may pass when justified
+- [ ] Existing repository/integration/regression tests pass
+- [ ] Senior Review / Final Gate passes
+- [ ] Prompt audit is preserved
+
+## Final Regression Gate after T-014
+
+Completion of T-014 must be followed by a full regression gate covering:
+
+- [ ] Typecheck
+- [ ] Lint
+- [ ] Build
+- [ ] Unit tests
+- [ ] Integration tests
+- [ ] Docker/MySQL integration where applicable
+- [ ] API contract regression for all existing endpoints
+- [ ] Validation/error regression
+- [ ] Idempotency regression
+- [ ] Concurrency regression
+- [ ] Runtime API ↔ OpenAPI/Swagger ↔ README consistency
+- [ ] Confirmation that T-001–T-010 behavior remains unchanged
+
 ## Gate ก่อนเริ่ม implementation
 
 - [x] อัปเดต RC01–RC04 และ RU01–RU08 เป็น **RESOLVED**
