@@ -903,7 +903,7 @@ If any refactor requires changing behavior approved in T-001–T-010: **STOP and
 
 ## T-013 Review Service Responsibilities / Targeted Cleanup
 
-**Current Status:** TODO
+**Current Status:** DONE
 
 **Objective:** Review application service responsibilities and perform targeted cleanup only where there is concrete maintainability or testability value.
 
@@ -911,26 +911,54 @@ This task is **Review → Refactor only if justified**. A documented **no-code-c
 
 **Sub-tasks:**
 
-- [ ] Review create-sale, payment, and cancel service responsibilities
-- [ ] Identify concrete duplication, mixed responsibilities, or clearly reusable logic
-- [ ] Extract responsibilities only when separation provides measurable clarity/testability value
-- [ ] Preserve the exact ordering of business operations
-- [ ] Preserve transaction scope
-- [ ] Preserve lock acquisition/order
-- [ ] Preserve idempotency behavior
-- [ ] Preserve error propagation/mapping
-- [ ] Do not introduce generic manager/helper/service layers merely for architectural appearance
+- [x] Review create-sale, payment, and cancel service responsibilities
+- [x] Identify concrete duplication, mixed responsibilities, or clearly reusable logic
+- [x] Extract responsibilities only when separation provides measurable clarity/testability value
+- [x] Preserve the exact ordering of business operations
+- [x] Preserve transaction scope
+- [x] Preserve lock acquisition/order
+- [x] Preserve idempotency behavior
+- [x] Preserve error propagation/mapping
+- [x] Do not introduce generic manager/helper/service layers merely for architectural appearance
 
 **Acceptance Criteria:**
 
-- [ ] No behavioral change
-- [ ] No transaction/locking/idempotency/concurrency change
-- [ ] Any extraction has a clear documented reason
-- [ ] No unnecessary abstraction is introduced
-- [ ] A no-code-change review result may pass the task when justified
-- [ ] Existing regression/integration/idempotency/concurrency tests pass
-- [ ] Senior Review / Final Gate passes
-- [ ] Prompt audit is preserved
+- [x] No behavioral change
+- [x] No transaction/locking/idempotency/concurrency change
+- [x] Any extraction has a clear documented reason
+- [x] No unnecessary abstraction is introduced
+- [x] A no-code-change result was considered; one extraction met the documented threshold
+- [x] Existing regression/integration/idempotency/concurrency tests pass
+- [x] Senior Review / Final Gate passes
+- [x] Prompt audit is preserved
+
+**Implementation evidence — 2026-09-18:**
+
+- Responsibility review confirmed that Create Sale appropriately owns product availability, price snapshot, Sale creation/expiry, replay-time expiry persistence, transaction/idempotency orchestration, and repository coordination; Payment appropriately owns Sale-state and amount decisions, the two-point expiry check, Payment creation, `PENDING → PAID` transition, Sale row locking, and replay result selection; Cancel appropriately owns cancellation eligibility, idempotent already-cancelled handling, `PENDING → CANCELLED`, Sale row locking, and replay result selection.
+- The only extraction meeting the T-013 threshold was the identical MySQL advisory-lock mechanism repeated by all three services: lock-name hashing, dedicated connection acquisition, `GET_LOCK`, acquisition verification, `RELEASE_LOCK`, and connection release now live in `src/application/idempotency-key-lock.ts`.
+- Each service still decides when to acquire the idempotency lock and retains its own fingerprint, transaction boundary, idempotency record lifecycle, replay/conflict/failure logic, Sale row-lock acquisition, repository-call ordering, state transitions, expiry handling, and error propagation. No generic workflow, manager, transaction framework, repository port, or new dependency was introduced.
+- Similar workflow code was intentionally not consolidated: Create Sale, Payment, and Cancel have materially different transaction ordering, expiry behavior, replay resources, result types, and state/error decisions. The small duplicate-entry predicate and operation-specific failed-record methods remain local to avoid a premature generic idempotency abstraction.
+- Added `tests/unit/idempotency-key-lock.test.ts` with 3 focused cases proving successful acquire/execute/release ordering, cleanup after callback failure, and suppression of workflow execution when lock acquisition fails.
+- Pre-change baseline PASS in required order: typecheck, lint, build, host regression (86 passed, 58 guarded skips).
+- Post-change gates PASS in required order: typecheck, lint, build, host regression (89 passed, 58 guarded skips). The focused helper suite passed 3/3.
+- Isolated Docker/MySQL full gate PASS (147/147), including Create Sale (13), Payment (18), Cancel (13), idempotency, rollback/failure, advisory locking, Sale row locking, cross-workflow concurrency, validation/error, OpenAPI, schema, seed, readiness, networking, and volume persistence. The initial sandboxed attempt was blocked by local Docker permissions; the approved retry passed and removed all isolated resources.
+- `git diff --check` PASS with expected Windows line-ending warnings only.
+- Routes, controllers, DTOs, validation, OpenAPI, business rules, SQL, repositories, database schema, migrations, seed data, transaction scopes, commit/rollback order, lock ordering, request fingerprints, idempotency records, and runtime configuration are unchanged. T-014 was not started.
+- AUD01 Prompt #1, the responsibility inventory, decision record, changed files, and actual verification results are recorded in `docs/prompts/T-013-service-responsibilities.md`. T-013 remains `REVIEW` pending an independent Senior Review / Final Gate.
+
+**Senior Review / Final Gate evidence — 2026-09-18:**
+
+- Independent line-by-line comparison against the three pre-T-013 service implementations confirmed genuine byte-for-byte-equivalent advisory-lock mechanics were extracted: SHA-256 lock name, `idempotency:` prefix, infinite wait value `-1`, dedicated connection acquisition, pinned `GET_LOCK`, acquisition check, workflow callback timing, pinned `RELEASE_LOCK`, nested cleanup, and connection release order are preserved.
+- Error-path equivalence PASS: connection acquisition still occurs before the protected `try`; lock-use/acquisition failures still enter the same cleanup; callback errors propagate unless superseded by the same release/connection cleanup errors as before; a release failure still runs connection release; connection release remains last and can supersede an earlier error exactly as in the original nested `finally` blocks.
+- Service responsibility review PASS: Create Sale, Payment, and Cancel retain their workflow bodies, business/state decisions, transactions, repository ordering, Sale row locks, expiry handling, idempotency lifecycle, replay resolution, separate `FAILED` persistence, and error propagation. The helper owns only the shared advisory-lock mechanism.
+- Scope/architecture PASS: the extraction materially removes three copies of fragile resource-management code without introducing a manager, workflow engine, transaction framework, repository interface, new dependency, SQL change, or T-014 work.
+- Test integrity PASS: no pre-existing test or assertion was removed, weakened, changed, or skipped. MINOR `T013-SR-001` identified missing direct coverage for `RELEASE_LOCK` failure; one focused regression test now proves connection release still runs and the cleanup error propagates with the preserved precedence. The finding is resolved without a production-code change.
+- Independent final gates in required order PASS: typecheck, lint, build, host regression (90 passed, 58 guarded skips).
+- Focused helper suite PASS (4/4); complete unit suite PASS (61/61); focused HTTP/OpenAPI suite PASS (38/38, including OpenAPI 2/2).
+- Isolated Docker/MySQL full gate PASS (148/148): Create Sale 13/13, Payment 18/18, Cancel 13/13, plus idempotency/replay/conflict, rollback/failure injection, advisory locks, Sale row locks, cross-workflow concurrency, validation/error, schema, seed, readiness, networking, and volume persistence. Disposable resources were removed successfully.
+- Frozen Behavioral Baseline PASS: no API, validation, error, OpenAPI, business, expiry, schema, SQL, repository, transaction, lock-order, fingerprint, idempotency, replay, conflict, `FAILED`, concurrency, Docker/runtime, or dependency behavior changed.
+- `git diff --check` PASS with expected Windows line-ending warnings only. No unresolved BLOCKER, MAJOR, or MINOR findings remain.
+- AUD01 Prompt #2 and actual independent review results are recorded verbatim in `docs/prompts/T-013-service-responsibilities.md`. SRG01 PASS; T-013 is `DONE`. T-014 remains `TODO` and untouched.
 
 ## T-014 Review Repository Dependency Boundary
 

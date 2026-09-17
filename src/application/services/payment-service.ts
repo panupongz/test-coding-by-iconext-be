@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import type { Knex } from 'knex';
 
@@ -20,22 +20,13 @@ import {
 } from '../../domain/payment.js';
 import { isSaleExpiredAt, SALE_STATUS } from '../../domain/sale.js';
 import { createRequestFingerprint } from '../request-fingerprint.js';
+import { withIdempotencyKeyLock } from '../idempotency-key-lock.js';
 
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
-const WAIT_FOR_IDEMPOTENCY_LOCK_WITHOUT_TIMEOUT = -1;
 
 interface MysqlError {
   readonly code?: unknown;
-}
-
-interface NamedLockRow {
-  readonly acquired: number;
-}
-
-interface ConnectionPoolClient {
-  acquireConnection(): Promise<unknown>;
-  releaseConnection(connection: unknown): Promise<void>;
 }
 
 export interface PaymentCommand {
@@ -135,39 +126,18 @@ export class PaymentService {
   public async execute(command: PaymentCommand): Promise<PaymentResult> {
     const requestReceivedAt = this.now();
     const requestFingerprint = createFingerprint(command);
-    const lockName = createHash('sha256')
-      .update(`idempotency:${command.idempotencyKey}`)
-      .digest('hex');
-    const poolClient = this.database.client as unknown as ConnectionPoolClient;
-    const connection = await poolClient.acquireConnection();
 
-    try {
-      const lockResult = (await this.database
-        .raw('SELECT GET_LOCK(?, ?) AS acquired', [
-          lockName,
-          WAIT_FOR_IDEMPOTENCY_LOCK_WITHOUT_TIMEOUT,
-        ])
-        .connection(connection)) as unknown as [NamedLockRow[]];
-
-      if (lockResult[0][0]?.acquired !== 1) {
-        throw new Error('Could not acquire the idempotency key lock');
-      }
-
-      return await this.executeWhileLocked(
-        command,
-        requestFingerprint,
-        requestReceivedAt,
-        connection,
-      );
-    } finally {
-      try {
-        await this.database
-          .raw('SELECT RELEASE_LOCK(?)', [lockName])
-          .connection(connection);
-      } finally {
-        await poolClient.releaseConnection(connection);
-      }
-    }
+    return withIdempotencyKeyLock(
+      this.database,
+      command.idempotencyKey,
+      (connection) =>
+        this.executeWhileLocked(
+          command,
+          requestFingerprint,
+          requestReceivedAt,
+          connection,
+        ),
+    );
   }
 
   private async executeWhileLocked(

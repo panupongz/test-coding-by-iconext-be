@@ -29,6 +29,7 @@
 | T-010 | `T-010-documentation.md` |
 | T-011 | `T-011-api-dtos.md` |
 | T-012 | `T-012-http-validation-schemas.md` |
+| T-013 | `T-013-service-responsibilities.md` |
 
 ## Update sequence
 
