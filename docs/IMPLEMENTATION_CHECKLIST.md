@@ -1,6 +1,6 @@
 # Backend implementation checklist
 
-สถานะเอกสาร: **T-001 DONE; T-002 DONE; T-003 DONE; T-004 DONE; T-005 DONE; T-006 DONE; T-007 DONE; T-008 DONE — Final Gate ผ่านหลัง SRG01 PASS และ audit completion**
+สถานะเอกสาร: **T-001–T-010 DONE — Final Gate ผ่านหลัง SRG01 PASS และ audit completion**
 
 ## Source of Truth และวิธีอ่าน
 
@@ -718,7 +718,7 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 ## T-010 README + API Documentation
 
-**Current Status:** TODO
+**Current Status:** DONE
 
 **Objective:** จัดทำเอกสารที่ตรง implementationจริงและทำให้ reviewer setup/run/migrate/seed/test/review ระบบได้
 
@@ -726,34 +726,53 @@ Seed dataset ที่ได้รับอนุญาตให้ Codex กำ
 
 **Sub-tasks:**
 
-- [ ] README ระบุ setup, migration, exact five-row seed และวิธี run/test ตาม implementation จริง
-- [ ] API docs ระบุสาม POST ใต้ `/api/v1` และยืนยันว่าไม่มี GET/DELETE/auth/Product management API
-- [ ] ระบุ lifecycle, persisted expiry, CASH/QR, integer THB, UTC/ISO 8601 และ relative image paths
-- [ ] ระบุ successful replay, different-request `409`, separate FAILED persistence และ failed retry `409`
-- [ ] ระบุ initial/retry statuses, fixed error enum, Cancel invalid/missing behavior และ schema statusตาม TECH01–TECH04
-- [ ] README ระบุ prerequisites และคำสั่ง Docker Compose สำหรับ config/build/start/stop/status/logs โดยไม่ใส่ real secrets
-- [ ] README ระบุวิธีสร้าง local `.env` จาก `.env.example` และอธิบายว่า backend ใน Composeใช้ DB host `mysql`
-- [ ] README ระบุ migration, seed และ test commandsที่ execute ภายใน `backend` container
-- [ ] README ระบุ MySQL healthcheck/readiness และ named volume persistenceที่จำเป็นต่อการใช้งาน
+- [x] README ระบุ setup, migration, exact five-row seed และวิธี run/test ตาม implementation จริง
+- [x] API docs ระบุสาม POST ใต้ `/api/v1` และยืนยันว่าไม่มี GET/DELETE/auth/Product management API
+- [x] ระบุ lifecycle, persisted expiry, CASH/QR, integer THB, UTC/ISO 8601 และ relative image paths
+- [x] ระบุ successful replay, different-request `409`, separate FAILED persistence และ failed retry `409`
+- [x] ระบุ initial/retry statuses, fixed error enum, Cancel invalid/missing behavior และ schema statusตาม TECH01–TECH04
+- [x] README ระบุ prerequisites และคำสั่ง Docker Compose สำหรับ config/build/start/stop/status/logs โดยไม่ใส่ real secrets
+- [x] README ระบุวิธีสร้าง local `.env` จาก `.env.example` และอธิบายว่า backend ใน Composeใช้ DB host `mysql`
+- [x] README ระบุ migration, seed และ test commandsที่ execute ภายใน `backend` container
+- [x] README ระบุ MySQL healthcheck/readiness และ named volume persistenceที่จำเป็นต่อการใช้งาน
 
 **Acceptance Criteria:** docs ตรง code/tests/Source; ไม่มี business rule/API เพิ่ม; Docker setup/run/migration/seed/test stepsทำซ้ำได้จาก clean checkout; ไม่มี real secretในตัวอย่าง; TECH01–TECH04 ถูกบันทึกครบ
 
 **Required Tests:**
 
-- TC-010.1: ทำตาม README จาก environment ว่าง → migration/seed/run/test สำเร็จ
-- TC-010.2: API examples ตรง integration tests ทั้ง status/body/error/DB effect
-- TC-010.3: docs ไม่มี GET/DELETE/login/stock/quantity input/Product CRUD
-- TC-010.4: idempotency/expiry/FAILED examples ตรง RC01–RC04/RU01–RU04
-- TC-010.5: ผู้ทดสอบทำตาม Docker README จาก clean checkoutด้วย local env → Compose build/start, migration, seed และ test commandsทำงานตามลำดับ
+- [x] TC-010.1: ทำตาม README จาก environment ว่าง → migration/seed/run/test สำเร็จ
+- [x] TC-010.2: API examples ตรง integration tests ทั้ง status/body/error/DB effect
+- [x] TC-010.3: docs ไม่มี GET/DELETE/login/stock/quantity input/Product CRUD
+- [x] TC-010.4: idempotency/expiry/FAILED examples ตรง RC01–RC04/RU01–RU04
+- [x] TC-010.5: reviewer ทำตาม Docker README จาก temporary clean checkoutด้วย local `.env` → Compose config/build/start, migration, seed และ test commandsทำงานตามลำดับ
+
+**Implementation evidence (2026-09-17):**
+
+- แยก `docs/API.md` เป็น contract ของสาม POST endpoints โดย cross-check กับ routes/controllers/services/domain/schema และ integration testsจริง; บันทึก request/response/DB effect, lifecycle, persisted expiry, CASH/QR, integer THB, UTC/ISO 8601, relative image, strict validation, TECH01–TECH04 และ fixed error enumครบ
+- ปรับ README เป็น reproducible migration-first clean-checkout flow: สร้าง untracked `.env` จาก `.env.example`, Compose config/build, start MySQL, migration, exact five-row seed, start/status/logs/stop, readiness, service-name `mysql`, named-volume persistence และ destructive cleanup warning
+- บันทึก exact seed `P001`–`P005` พร้อม name/description/image/priceตรง `PRODUCT_SEED_DEFINITIONS`; ระบุ idempotent seed และ conflict behaviorตาม implementation
+- บันทึก in-container migration/seed/unit/full-test commands รวม disposable database guard; ไม่เพิ่ม dependency, route, business rule หรือ production-code change
+- Validation: `npm run typecheck`, `npm run lint`, `npm run build` ผ่าน; host `npm test` ผ่าน 84 testsและ skip 58 database testsตาม disposable-context guard
+- `npm run test:docker` ผ่านบน isolated MySQL 8.4/Compose environment: config/build, withheld-DB readiness, health, backend-to-`mysql` networking, in-container migration/seed, exact seed, named-volume persistence, full suite 142/142 และ isolated cleanupผ่าน
+- Documentation checks: JSON examples parseผ่าน 6/6; API examples/status/body/error/DB effects cross-checkกับ executable integration tests; `docker compose config --quiet` และ `git diff --check` ผ่าน (มีเพียง Windows line-ending warnings)
+- Scope review: diffมีเฉพาะ README, API documentation, T-010 checklist evidence และ T-010 prompt audit; ไม่มี production/test/config behaviorถูกแก้
+- Independent Senior Review ทำจาก temporary clean checkoutที่สร้างจาก `HEAD` และ overlayเฉพาะ T-010 docs: local `.env`, config, fresh build, clean MySQL volume, migration, seedสองครั้ง, backend start/health, live API examples, lifecycle commands, named-volume persistence และ exact isolated `iconext-review` workflowผ่าน
+- Live API reviewตรงเอกสาร: Create `201`/replay `200`, CASH `201`พร้อม change/replay `200`, QR `201`ไม่มี change, Cancel `200`, Cancel body `400` + Thai `VALIDATION_ERROR`; databaseยืนยัน exact seed 5 rows, Sales 3 rowsและ Payments 2 rowsตาม requests
+- Reviewer in-container gatesผ่าน: typecheck, lint, unit 55/55 และ fresh disposable MySQL full suite 142/142; host final gatesผ่าน unit 55/55, regression 84 passed/58 expected skips, typecheck, lint, build และ Compose config
+- Persistence/lifecycle reviewผ่าน: restart, logs, stop/start และ `down`โดยไม่ `-v`; recreate MySQLแล้วยืนยัน Products 5, Sales 3, Payments 2 ยังอยู่; isolated project cleanupลบ containers/network/volumeสำเร็จ
+- `SRG01-T010-001` (MINOR — VERIFIED FIXED): README cleanup sentenceไม่กล่าวถึง network และไม่ได้เตือนว่า reused MySQL volumeคง credentialsเดิม; แก้ให้ระบุ containers/network/volume/image behavior, credential stability และ unused disposable project name แล้ว re-check documentation
+- Diagnostic full-suite runบน review DBหลังสร้าง live API dataได้ 138/142 เพราะ seed testsไม่สามารถลบ Productsที่ Salesอ้างอิง; ไม่ใช่ product/docs regression และยืนยันเหตุผลของ disposable clean-test requirement; exact documented fresh workflowผ่าน 142/142
+- SRG01: PASS — unresolved BLOCKER/HIGH/MEDIUM/MAJOR/MINOR = 0; accuracy, completeness, security, reproducibility, scope และ AUD01ผ่าน
+- Final Gate: PASS — TC-010.1–TC-010.5, Acceptance Criteria, Definition of Done และ prompt auditผ่านครบ; T-010ปิดเป็น `DONE`
 
 **Definition of Done:**
 
-- [ ] Sub-tasksและ Acceptance Criteria ของ T-010 ผ่าน
-- [ ] Project strict TypeScript/typecheck, lintและ relevant testsยังผ่านหลัง doc/config changes
-- [ ] TC-010.1–TC-010.5 ผ่านโดย reviewerทำตามเอกสารได้
-- [ ] SRG01 ตรวจ accuracy/completeness/securityของ docsและไม่มี unresolved HIGH/MEDIUM findings
-- [ ] README/API docsและ checklistสะท้อน implementationจริง
-- [ ] Prompt audit trail updated
+- [x] Sub-tasksและ Acceptance Criteria ของ T-010 ผ่าน
+- [x] Project strict TypeScript/typecheck, lintและ relevant testsยังผ่านหลัง doc/config changes
+- [x] TC-010.1–TC-010.5 ผ่านโดย reviewerทำตามเอกสารได้
+- [x] SRG01 ตรวจ accuracy/completeness/securityของ docsและไม่มี unresolved HIGH/MEDIUM findings
+- [x] README/API docsและ checklistสะท้อน implementationจริง
+- [x] Prompt audit trail updated
 
 ## Gate ก่อนเริ่ม implementation
 
